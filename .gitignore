@@ -1,5 +1,8 @@
 # 仿真数据与中间产物
-data/*.mat
+data/**/*.mat
+# Rebuildable research trajectories stay local; summary CSVs are versioned.
+# Repeated diagnostic console logs can contain superseded runs.
+data/research_v2/*log.txt
 data/*.slx.r*/*
 *.slx.r*
 *.autosave

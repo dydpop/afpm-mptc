@@ -1,0 +1,33 @@
+AFPM equivalent lumped-parameter PMSM plant validation only
+Not 3D electromagnetic simulation; not full closed-loop validation.
+Timestamp=2026-11-15 23:45:22
+MATLAB=24.2.0.2712019 (R2024b)
+SimulinkLicense=1
+AbsoluteTolerances[A,A,rad/s,rad,N*m]=[1e-05 1e-05 1e-05 1e-07 1e-05]
+NormalizedTolerance=9.9999999999999995e-07; scale=max(reference_peak,1 physical unit)
+Simulink: ode45 RelTol=1e-8 AbsTol=1e-10 MaxStep=1e-4 StopTime=0.1
+Independent MATLAB: ode45 RelTol=1e-12 AbsTol=1e-13 MaxStep=1e-5
+ReloadedModel=D:\Workbuddy workspace\电机课\afpm-mptc\src\model\baseline_validation.slx
+IntegratorCount=4; FromWorkspaceCount=0
+Rs=0.2 L=0.0085 psi=0.175 p=4 J=0.003 F=0.008; x0=[0 0 0 0]; Tload=0
+Test=rotating_voltage_20Hz Samples=1006 FinalTime=0.10000000000000001
+FinalStateAndTorque=[-9.18773773209 -7.11225505696 33.6201914657 2.96955402389 -11.8953382366]
+independent_ode45 ialpha max_abs=2.6113688989e-10 normalized=7.62838906663e-12 pass=1
+independent_ode45 ibeta max_abs=2.98755686856e-10 normalized=1.09998797188e-11 pass=1
+independent_ode45 wm max_abs=5.3390181165e-10 normalized=6.31696370766e-12 pass=1
+independent_ode45 thm max_abs=4.28723723189e-12 normalized=1.44373101058e-12 pass=1
+independent_ode45 Te max_abs=2.9719693373e-10 normalized=8.2605096025e-12 pass=1
+Test=aligned_DC_RL_analytic Samples=1006 FinalTime=0.10000000000000001
+FinalStateAndTorque=[135.736638484 0 0 0 0]
+independent_ode45 ialpha max_abs=7.95807864051e-13 normalized=5.86288177561e-15 pass=1
+independent_ode45 ibeta max_abs=0 normalized=0 pass=1
+independent_ode45 wm max_abs=0 normalized=0 pass=1
+independent_ode45 thm max_abs=0 normalized=0 pass=1
+independent_ode45 Te max_abs=0 normalized=0 pass=1
+exact_RL_solution ialpha max_abs=7.38964445191e-13 normalized=5.44410450592e-15 pass=1
+exact_RL_solution ibeta max_abs=0 normalized=0 pass=1
+exact_RL_solution wm max_abs=0 normalized=0 pass=1
+exact_RL_solution thm max_abs=0 normalized=0 pass=1
+exact_RL_solution Te max_abs=0 normalized=0 pass=1
+CSV=D:\Workbuddy workspace\电机课\afpm-mptc\data\research_v2\simulink_validation.csv
+OVERALL_PASS=1

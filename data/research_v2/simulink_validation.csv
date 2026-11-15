@@ -1,0 +1,16 @@
+test,reference,signal,unit,max_abs_error,normalized_error,normalization_scale,absolute_tolerance,normalized_tolerance,passed,sample_count
+rotating_voltage_20Hz,independent_ode45,ialpha,A,2.61136889889713e-10,7.62838906663389e-12,34.2322458396766,1e-05,1e-06,1,1006
+rotating_voltage_20Hz,independent_ode45,ibeta,A,2.98755686856111e-10,1.09998797187809e-11,27.1599048802346,1e-05,1e-06,1,1006
+rotating_voltage_20Hz,independent_ode45,wm,rad/s,5.33901811650139e-10,6.31696370765664e-12,84.5187397551469,1e-05,1e-06,1,1006
+rotating_voltage_20Hz,independent_ode45,thm,rad,4.2872372318925e-12,1.44373101058097e-12,2.96955402389485,1e-07,1e-06,1,1006
+rotating_voltage_20Hz,independent_ode45,Te,N*m,2.97196933729538e-10,8.26050960249935e-12,35.9780386478355,1e-05,1e-06,1,1006
+aligned_DC_RL_analytic,independent_ode45,ialpha,A,7.95807864051312e-13,5.8628817756073e-15,135.736638484217,1e-05,1e-06,1,1006
+aligned_DC_RL_analytic,independent_ode45,ibeta,A,0,0,1,1e-05,1e-06,1,1006
+aligned_DC_RL_analytic,independent_ode45,wm,rad/s,0,0,1,1e-05,1e-06,1,1006
+aligned_DC_RL_analytic,independent_ode45,thm,rad,0,0,1,1e-07,1e-06,1,1006
+aligned_DC_RL_analytic,independent_ode45,Te,N*m,0,0,1,1e-05,1e-06,1,1006
+aligned_DC_RL_analytic,exact_RL_solution,ialpha,A,7.38964445190504e-13,5.44410450592106e-15,135.736638484217,1e-05,1e-06,1,1006
+aligned_DC_RL_analytic,exact_RL_solution,ibeta,A,0,0,1,1e-05,1e-06,1,1006
+aligned_DC_RL_analytic,exact_RL_solution,wm,rad/s,0,0,1,1e-05,1e-06,1,1006
+aligned_DC_RL_analytic,exact_RL_solution,thm,rad,0,0,1,1e-07,1e-06,1,1006
+aligned_DC_RL_analytic,exact_RL_solution,Te,N*m,0,0,1,1e-05,1e-06,1,1006
