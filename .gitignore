@@ -1,0 +1,16 @@
+# 仿真数据与中间产物
+data/*.mat
+data/*.slx.r*/*
+*.slx.r*
+*.autosave
+
+# MATLAB 临时文件
+*.asv
+*.m~
+slprj/
+*.slxc
+
+# 系统文件
+Thumbs.db
+.DS_Store
+desktop.ini
