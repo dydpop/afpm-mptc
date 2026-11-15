@@ -87,6 +87,7 @@ afpm-mptc/
 │   ├── 汇报参考稿.docx
 │   └── 项目执行流程.md
 ├── src/
+│   ├── INTERFACE.md         模块接口定义与任务拆解（改端口必先改它）
 │   ├── model/               Simulink 模型（一人一文件，不共用）
 │   │   ├── baseline.slx     基准被控对象（Haotian Feng）
 │   │   ├── mptc.slx         MPTC 控制器（Wenkai Liu）
@@ -129,3 +130,5 @@ afpm-mptc/
 2. **数据文件自解释命名**：`Rs_p10_step_load.mat`（参数_偏移_工况），禁止 `result1.mat`
 3. **每日收工存带日期副本**：`mptc_1118.slx`、`mptc_1120.slx`
 4. **指标口径变更须通知全员**，并同步更新脚本注释
+5. **改端口名、单位、采样率，必须先改 `src/INTERFACE.md` 并通知全员**——这是最容易返工的地方
+6. **`main.slx` 只做连线**，任何人不得在其中加入自己的控制逻辑
