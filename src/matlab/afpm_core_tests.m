@@ -3,13 +3,15 @@ function tests = afpm_core_tests()
 cases = {@test_defaults, @test_zero, @test_vectors_power, ...
     @test_delay, @test_speed_pi, @test_pwm, @test_fine, ...
     @test_mismatch, @test_current_limit, @test_loaded, ...
-    @test_pwm_events, @test_pwm_convergence};
+    @test_pwm_events, @test_pwm_convergence, ...
+    @test_direct_torque_step, @test_predictor_switch};
 names = {'默认参数与研究假设', '零电流初值及零负载', ...
     '电压矢量及电磁功率符号', '一拍物理延时与补偿开关', ...
     '统一转矩PI及条件积分', '真实PWM整数翻转计数', ...
     '步末时间与子步记录', '参数失配仅作用控制器', ...
     'FOC电压矢量限幅', '负载下两方案转速跟踪', ...
-    '精确PWM窄脉冲全计数与冻结队列', 'FOC分段RK4步长收敛'};
+    '精确PWM窄脉冲全计数与冻结队列', 'FOC分段RK4步长收敛', ...
+    '直接转矩阶跃旁路速度环', '预测离散方式切换'};
 tests = repmat(struct('name','','pass',false,'detail',''),numel(cases),1);
 for k = 1:numel(cases)
     tests(k).name = names{k};
@@ -29,11 +31,12 @@ P = afpm_defaults();
 assert(P.Rs==.2 && P.L==.0085 && P.psi==.175 && P.p==4);
 assert(P.J==.003 && P.F==.008 && P.Udc==250);
 assert(P.Ts==50e-6 && P.Nsub==20 && P.w_ref==300);
-assert(P.T_load==8 && P.t_step==.3 && P.t_end==1.2);
+assert(P.T_load==8 && P.t_step==.3 && P.t_end==2);
 assert(P.T_rated==11.9 && P.lam_flux==1 && P.lam_sw==.02);
 assert(P.Kp_w==2 && P.Ki_w==8 && P.f_sw_foc==6500);
 assert(P.delay_comp && P.log_fine);
-d = '默认值符合约定';
+assert(strcmp(P.predictor,'euler') && isempty(P.direct_Tref));
+d = '默认值符合约定（t_end=2.0、predictor=euler、direct_Tref为空）';
 end
 
 function d = test_zero()
@@ -162,7 +165,8 @@ d='低母线电压触发dq矢量限幅，积分状态有限';
 end
 
 function d = test_loaded()
-P=afpm_defaults(); values=zeros(1,2); i=0;
+% 默认t_end=2.0但时长压缩以控制测试时间：负载阶跃提前，末0.1s已进入稳态。
+P=afpm_defaults(); P.t_end=.9; P.t_step=.25; values=zeros(1,2); i=0;
 for mode={'mptc','foc'}
     o=afpm_simulate(mode{1},[],P); i=i+1;
     for field={'Te','wm','ia','ib','id','iq','theta_e','Tref','edges'}
@@ -241,4 +245,65 @@ assert(isequal(a{1}.edges,a{2}.edges) && isequal(a{2}.edges,a{3}.edges));
 assert(max(abs(a{1}.fine.ia-a{2}.fine.ia(2:2:end)))<1e-5);
 assert(max(abs(a{2}.fine.ia-a{3}.fine.ia(2:2:end)))<1e-5);
 d=sprintf('Nsub=10→20状态差%.3g，20→40状态差%.3g；含h内部负载阶跃及公共采样时刻',e1,e2);
+end
+
+function d = test_direct_torque_step()
+P=afpm_defaults(); P.t_end=.3; P.T_load=0;
+P.direct_Tref=struct('t',.1,'from',2,'to',6);
+cap=1.5*P.T_rated; assert(P.direct_Tref.from<=cap && P.direct_Tref.to<=cap);
+for mode={'mptc','foc'}
+    o=afpm_simulate(mode{1},[],P);
+    assert(strcmp(o.response_mode,'direct_torque_step'));
+    assert(isequal(o.direct_Tref,P.direct_Tref));
+    early=o.t<.1; late=o.t>.1;
+    assert(all(o.Tref(early)==min(max(P.direct_Tref.from,-cap),cap)));
+    assert(all(o.Tref(late)==min(max(P.direct_Tref.to,-cap),cap)));
+    assert(all(o.speed_integral==0),'旁路速度环时积分状态须保持0');
+    % Tref在步初计算：t=0.1拍（步初0.1-50us<0.1）仍属from段，下一拍起为to。
+    assert(o.Tref(find(early,1,'last'))==2);
+    k=find(late,1,'first')-1; assert(o.t(k)==.1 && o.Tref(k+1)==6);
+    assert(all(isfinite(o.Te)) && all(isfinite(o.wm)));
+end
+% 电磁转矩朝to靠近：阶跃后0.1s内（转速尚未明显上升）平均Te应贴近6。
+o1=afpm_simulate('mptc',[],P); o2=afpm_simulate('foc',[],P);
+m=o1.t>=.1 & o1.t<=.2;
+te1=mean(o1.Te(m)); te2=mean(o2.Te(m));
+assert(te1>4.5 && te1<7 && te2>4.5 && te2<7);
+% 限幅验证：超过1.5*T_rated的给定被截断。
+Q=afpm_defaults(); Q.t_end=.1; Q.T_load=0; Q.direct_Tref=struct('t',.05,'from',2,'to',40);
+o=afpm_simulate('mptc',[],Q);
+assert(max(o.Tref)<=cap+1e-12 && abs(max(o.Tref)-cap)<1e-12);
+d=sprintf('t<0.1恒2、t>=0.1恒6；阶跃后0.1~0.2s平均Te MPTC=%.3f、FOC=%.3f N·m；限幅30→%.3f N·m',te1,te2,cap);
+end
+
+function d = test_predictor_switch()
+% 加入0.8倍参数失配，使euler与trapezoid的预测出现可分辨差异。
+P=afpm_defaults(); P.t_end=.05; P.T_load=0; P.w_ref=300; P.t_step=1;
+mm=struct('Rs',.8,'psi',.8);
+o=afpm_simulate('mptc',mm,P); Pc=o.controller_params;
+% predict_state为文件局部函数无法直接调用，此处独立复算Euler与显式Heun校验二阶修正。
+a=[1.2;-0.7]; b=[-0.4;1.1]; th=0; wm=8; ua=[60;-90]; ub=[40;150];
+we=Pc.p*wm; L=Pc.L; R=Pc.Rs; ps=Pc.psi; Ts=P.Ts;
+dfun=@(x,y,t)([ (ua-R*x+ps*we*sin(t))/L ; (ub-R*y-ps*we*cos(t))/L ]);
+f0=dfun(a,b,th);
+f1=dfun(a+Ts*f0(1:2),b+Ts*f0(3:4),th+Ts*we);
+e=[a+Ts*f0(1:2); b+Ts*f0(3:4)];
+h2=[a+.5*Ts*(f0(1:2)+f1(1:2)); b+.5*Ts*(f0(3:4)+f1(3:4))];
+assert(all(isfinite(e)) && all(isfinite(h2)));
+assert(max(abs(h2-e))>1e-6);
+res=cell(2,1); methods={'euler','trapezoid'};
+for i=1:2
+    P.predictor=methods{i};
+    for mode={'mptc','foc'}
+        o=afpm_simulate(mode{1},mm,P);
+        assert(strcmp(o.predictor,methods{i}));
+        for field={'Te','wm','ia','ib','Tref'}
+            assert(all(isfinite(o.(field{1})(:))));
+        end
+        if strcmp(mode{1},'mptc'), res{i}=o; end
+    end
+end
+dTe=res{1}.Te-res{2}.Te;
+assert(~all(isnan(dTe)));
+d=sprintf('带0.8倍失配；euler与trapezoid均可运行，MPTC转矩差绝对值均值=%.4g N·m（不判定优劣）',mean(abs(dTe)));
 end

@@ -5,9 +5,9 @@ out=fullfile(root,'data','research_v2');
 B=readtable(fullfile(out,'baseline_metrics.csv'),'TextType','string');
 R=readtable(fullfile(out,'sweep_metrics.csv'),'TextType','string');
 C=readtable(fullfile(out,'robustness_metrics.csv'),'TextType','string');
-T=readtable(fullfile(out,'core_tests.csv'),'TextType','string');
-U=readtable(fullfile(out,'metric_tests.csv'),'TextType','string');
-V=readtable(fullfile(out,'simulink_validation.csv'),'TextType','string');
+T=read_test_table(fullfile(out,'core_tests.csv'));
+U=read_test_table(fullfile(out,'metric_tests.csv'));
+V=read_test_table(fullfile(out,'simulink_validation.csv'));
 batch=load(fullfile(out,'manifest.mat'),'manifest');
 assert(strcmp(batch.manifest.status,'complete'),'Batch is not complete.');
 for tab={B,R,C}
@@ -63,6 +63,8 @@ c=onCleanup(@()fclose(fid)); %#ok<NASGU>
 fprintf(fid,'Core tests: %d/%d\nMetric tests: %d/%d\nSimulink plant comparisons: %d/%d\n',sum(T.passed),height(T),sum(U.passed),height(U),sum(V.passed),height(V));
 fprintf(fid,'Mismatch rows: %d (26 unique configurations; nominal repeated per parameter)\n',height(R));
 fprintf(fid,'THD valid: %d/%d; invalid entries retain reason and NaN.\n',sum(R.thd_valid),height(R));
+fprintf(fid,'Steady gate (trend<=0.2%%, offset<=0.5%%): %d/%d sweep rows valid; %d/%d baseline rows.\n', ...
+    sum(R.steady_valid),height(R),sum(B.steady_valid),height(B));
 fprintf(fid,'Mean speed gate |error|<2%%: %d/%d\n',sum(abs(R.speed_error_pct)<2),height(R));
 fprintf(fid,'Refinement screening <=5%%: %d/%d metrics. This is an engineering screen, not a mathematical convergence proof.\n',sum(Q.screening_passed),height(Q));
 fprintf(fid,'No independent experimental replicates; no significance tests or confidence intervals claimed.\n');
@@ -72,4 +74,27 @@ for k=1:height(B)
 end
 disp(B(:,{'mode','speed_mean_rpm','ripple_pp_Nm','thd_pct','f_sw_Hz','load_recovery_ms'}));
 disp(S); disp(Q);
+stepFile=fullfile(out,'direct_step_metrics.csv');
+if isfile(stepFile)
+    D=readtable(stepFile,'TextType','string');
+    assert(height(D)==2 && all(isfinite(D.rise_ms)));
+    writetable(D,stepFile);
+    for k=1:height(D)
+        fprintf(fid,'DIRECT_STEP %s rise_ms=%.4f overshoot_pct=%.3f final_Nm=%.4f err_pct=%.3f sustained=%d\n', ...
+            D.mode(k),D.rise_ms(k),D.overshoot_pct(k),D.final_mean_Nm(k),D.final_err_pct(k),D.sustained_20ms(k));
+    end
+    disp(D(:,{'mode','rise_ms','overshoot_pct','final_mean_Nm','final_err_pct'}));
+end
+end
+
+function d = read_test_table(f)
+% readtable 对含中文长文本的 CSV 偶发误判表头，这里用 readcell 按列位置取。
+c = readcell(f);
+assert(size(c,1)>=2 && size(c,2)>=2,'测试表结构异常：%s',f);
+hdr = string(c(1,:));
+k = find(hdr=="passed",1);
+assert(~isempty(k),'测试表缺少 passed 列：%s',f);
+body = c(2:end,:);
+d = table(string(body(:,1)),logical(cell2mat(body(:,k))), ...
+    'VariableNames',{'name','passed'});
 end

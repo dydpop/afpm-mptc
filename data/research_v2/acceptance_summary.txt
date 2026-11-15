@@ -1,10 +1,13 @@
-Core tests: 12/12
-Metric tests: 22/22
+Core tests: 14/14
+Metric tests: 26/26
 Simulink plant comparisons: 15/15
 Mismatch rows: 30 (26 unique configurations; nominal repeated per parameter)
 THD valid: 30/30; invalid entries retain reason and NaN.
+Steady gate (trend<=0.2%, offset<=0.5%): 30/30 sweep rows valid; 2/2 baseline rows.
 Mean speed gate |error|<2%: 30/30
 Refinement screening <=5%: 8/8 metrics. This is an engineering screen, not a mathematical convergence proof.
 No independent experimental replicates; no significance tests or confidence intervals claimed.
-BASELINE mptc speed_rpm=297.376952 ripple_Nm=1.217126 THD_pct=2.849077 fsw_Hz=1332.083333 recovery_ms=469.635000
-BASELINE foc speed_rpm=297.396337 ripple_Nm=0.955040 THD_pct=0.080432 fsw_Hz=1332.500000 recovery_ms=467.060000
+BASELINE mptc speed_rpm=299.890956 ripple_Nm=1.222244 THD_pct=2.868002 fsw_Hz=1344.166667 recovery_ms=469.635000
+BASELINE foc speed_rpm=299.893599 ripple_Nm=0.938143 THD_pct=0.058852 fsw_Hz=1345.833333 recovery_ms=469.065000
+DIRECT_STEP mptc rise_ms=1.2500 overshoot_pct=0.138 final_Nm=7.8516 err_pct=-1.855 sustained=1
+DIRECT_STEP foc rise_ms=6.7500 overshoot_pct=1.396 final_Nm=8.0537 err_pct=0.671 sustained=1

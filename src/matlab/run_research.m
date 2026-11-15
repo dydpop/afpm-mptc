@@ -14,7 +14,7 @@ manifestFile = fullfile(out,'manifest.mat');
 if any(strcmp(task,{'all','baseline'}))
     manifest = struct('run_id',['run_' char(datetime('now','Format','yyyyMMdd_HHmmss'))], ...
         'source_fingerprint',fingerprint,'status','running','expected_sweep_rows',30, ...
-        'expected_robustness_rows',17,'completed_utc_note','local time recorded');
+        'expected_robustness_rows',19,'completed_utc_note','local time recorded');
     save(manifestFile,'manifest');
     writetable(struct2table(manifest),fullfile(out,'manifest.csv'));
 elseif any(strcmp(task,{'sweep','robustness','figures'}))
@@ -77,8 +77,9 @@ if any(strcmp(task,{'sweep','all'}))
 end
 if any(strcmp(task,{'robustness','all'}))
     R = table();
+    % 只比较实际使用的 Nsub=20 与细化档 40；不再跑明显偏粗的 10 档。
     for mode = {'mptc','foc'}
-        for nsub = [10 20 40]
+        for nsub = [20 40]
             Q = P; Q.Nsub = nsub;
             id = sprintf('step_%s_n%02d',mode{1},nsub);
             fprintf('CONVERGENCE %s\n',id);
@@ -110,12 +111,51 @@ if any(strcmp(task,{'robustness','all'}))
         [R,~] = add_case(R,id,'flux_weight','mptc','lam_flux',weight,Q,o,out);
         writetable(R,fullfile(out,'robustness_metrics.csv'));
     end
+    % 开题拟定的离散方式对照：Euler vs 显式梯形(Heun)。只改预测，不改对象与队列。
+    for predictor = {'euler','trapezoid'}
+        Q = P; Q.predictor = predictor{1};
+        id = sprintf('predictor_%s',predictor{1});
+        o = afpm_simulate('mptc',struct(),Q);
+        [R,~] = add_case(R,id,'predictor','mptc','predictor',double(strcmp(predictor{1},'trapezoid')),Q,o,out);
+        writetable(R,fullfile(out,'robustness_metrics.csv'));
+    end
+    % 负载水平：8 N m 为基准，11.9 N m 为开题额定值，检验结论是否依赖轻载。
+    for loadLevel = [P.T_load 11.9]
+        Q = P; Q.T_load = loadLevel;
+        id = sprintf('load_%02dNm',round(loadLevel*10));
+        o = afpm_simulate('mptc',struct(),Q);
+        [R,~] = add_case(R,id,'load_level','mptc','T_load',loadLevel,Q,o,out);
+        writetable(R,fullfile(out,'robustness_metrics.csv'));
+    end
     disp(R(:,{'case_id','mode','ripple_pp_Nm','thd_pct','f_sw_Hz'}));
+end
+if any(strcmp(task,{'step','all'}))
+    D = table();
+    for mode = {'mptc','foc'}
+        % 转矩阶跃必须在"大惯量试验台"上做：J=0.003 时 8 N·m 约 15 ms 就把
+        % 转速推到反电动势饱和，测到的是电压极限而不是转矩跟踪能力。
+        Q = P; Q.T_load = 0; Q.J = 0.05; Q.t_end = 0.5;
+        Q.direct_Tref = struct('t',0.2,'from',2,'to',8);
+        id = sprintf('direct_step_%s',mode{1});
+        fprintf('DIRECT_STEP %s\n',id);
+        o = afpm_simulate(mode{1},struct(),Q);
+        s = step_response(o,Q);
+        D = [D; table(string(id),string(mode{1}),Q.direct_Tref.t,Q.direct_Tref.from, ...
+            Q.direct_Tref.to,s.rise_ms,s.overshoot_pct,s.final_mean_Nm,s.final_err_pct, ...
+            s.sustained,s.f_sw_Hz,'VariableNames',{'case_id','mode','t_step_s','from_Nm', ...
+            'to_Nm','rise_ms','overshoot_pct','final_mean_Nm','final_err_pct', ...
+            'sustained_20ms','f_sw_Hz'})]; %#ok<AGROW>
+        save(fullfile(out,[id '.mat']),'P','Q','o','s','-v7');
+        writetable(D,fullfile(out,'direct_step_metrics.csv'));
+        fprintf('  rise %.2f ms | overshoot %.2f%% | final %.3f (%.2f%%) | sustained %d\n', ...
+            s.rise_ms,s.overshoot_pct,s.final_mean_Nm,s.final_err_pct,s.sustained);
+    end
+    disp(D);
 end
 if any(strcmp(task,{'figures','all'}))
     A=readtable(fullfile(out,'sweep_metrics.csv'),'TextType','string');
     B=readtable(fullfile(out,'robustness_metrics.csv'),'TextType','string');
-    assert(height(A)==30 && height(B)==17,'Incomplete batch: do not publish figures.');
+    assert(height(A)==30 && height(B)==19,'Incomplete batch: do not publish figures.');
     v=load(manifestFile,'manifest');
     assert(all(A.source_fingerprint==string(fingerprint)) && all(B.source_fingerprint==string(fingerprint)),'Mixed source versions.');
     assert(all(A.run_id==string(v.manifest.run_id)) && all(B.run_id==string(v.manifest.run_id)),'Mixed batches.');
@@ -139,6 +179,30 @@ for k=1:numel(files)
     md.update(typecast(uint8(bytes),'int8'));
 end
 fingerprint=lower(reshape(dec2hex(typecast(md.digest(),'uint8'),2).',1,[]));
+end
+
+function s = step_response(o,Q)
+% 直接转矩指令阶跃的响应测量：1 ms 因果滑动平均，±5% 目标值持续 20 ms 才算到位。
+t = o.t(:); y = o.Te(:); Ts = median(diff(t));
+n = max(1,ceil(1e-3/Ts)); f = movmean(y,[n-1 0]); f(1:min(n-1,numel(f))) = NaN;
+t0 = Q.direct_Tref.t; target = Q.direct_Tref.to; tol = .05*abs(target);
+post = t>=t0 & isfinite(f);
+inside = false(size(t)); inside(post) = abs(f(post)-target)<=tol;
+s.sustained = false; s.rise_ms = NaN;
+if any(post) && inside(end)
+    lastbad = find(~inside & post,1,'last');
+    if isempty(lastbad), k = find(post,1); else, k = find(t>t(lastbad),1); end
+    if ~isempty(k) && t(end)-t(k) >= .020-1e-9
+        s.sustained = true; s.rise_ms = (t(k)-t0)*1e3;
+    end
+end
+tail = t>=t(end)-.2 & isfinite(f);
+s.final_mean_Nm = mean(f(tail));
+s.final_err_pct = 100*(s.final_mean_Nm-target)/abs(target);
+peak = max(f(post)); s.overshoot_pct = max(0,100*(peak-target)/abs(target));
+s.f_sw_Hz = sum(o.edges(t>=t(end)-.2))/(6*.2);
+s.rise_definition = '1 ms moving average enters ±5% of target and holds until record end (>=20 ms)';
+s.filter_ms = n*Ts*1e3;
 end
 
 function [R,m] = add_case(R,id,family,mode,param,factor,P,o,out)
@@ -219,5 +283,22 @@ if isfile(fullfile(out,'robustness_metrics.csv'))
     plot(D.f_sw_Hz,D.ripple_pp_Nm,'-o'); grid on; xlabel('Measured device switching frequency (Hz)');
     ylabel('Torque ripple, p-p (N m)'); title('Switching-penalty ablation (not an optimized Pareto front)');
     exportgraphics(f,fullfile(figdir,'robustness_checks.png'),'Resolution',300); close(f);
+end
+if isfile(fullfile(out,'direct_step_metrics.csv')) && isfile(fullfile(out,'direct_step_mptc.mat'))
+    M=load(fullfile(out,'direct_step_mptc.mat')); F=load(fullfile(out,'direct_step_foc.mat'));
+    f=figure('Visible','off','Color','w','Position',[80 80 1000 620]); tiledlayout(2,1,'TileSpacing','compact');
+    nexttile; plot(M.o.t,M.o.Te,'Color',[.75 .82 .9],'LineWidth',.5); hold on;
+    plot(F.o.t,F.o.Te,'Color',[.95 .80 .72],'LineWidth',.5);
+    plot(M.o.t,movmean(M.o.Te,[400 0]),'Color',colors(1,:),'LineWidth',1.4);
+    plot(F.o.t,movmean(F.o.Te,[400 0]),'Color',colors(2,:),'LineWidth',1.4);
+    xline(M.Q.direct_Tref.t,'k--'); xlim([M.Q.direct_Tref.t-0.05 M.Q.direct_Tref.t+0.25]);
+    ylabel('Torque (N m)'); grid on; legend('MPTC','PWM FOC','MPTC 1 ms avg','FOC 1 ms avg','Location','southeast');
+    title('Direct torque-reference step 2 to 8 N m (speed loop bypassed)');
+    nexttile; plot(M.o.t,M.o.wm*60/(2*pi),'Color',colors(1,:)); hold on;
+    plot(F.o.t,F.o.wm*60/(2*pi),'Color',colors(2,:));
+    xline(M.Q.direct_Tref.t,'k--'); xlim([0 M.P.t_end]); ylabel('Speed (rpm)'); xlabel('Time (s)');
+    grid on; legend('MPTC','PWM FOC','Location','best');
+    title('Speed is a consequence here, not the regulated quantity');
+    exportgraphics(f,fullfile(figdir,'direct_torque_step.png'),'Resolution',300); close(f);
 end
 end

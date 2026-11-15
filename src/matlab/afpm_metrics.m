@@ -17,7 +17,8 @@ end
 assert(numel(w)==2 && all(isfinite(w)) && w(1)>=0 && w(2)>w(1) ...
     && w(2)<=P.t_end+1e-10,'afpm:Window','指标窗口必须在仿真范围内');
 m=struct('speed_mean_rpm',NaN,'speed_error_pct',NaN,'torque_mean_Nm',NaN, ...
-    'ripple_pp_Nm',NaN,'ripple_pct',NaN,'thd_pct',NaN,'thd_valid',false, ...
+    'ripple_pp_Nm',NaN,'ripple_pct',NaN,'ripple_valid',false, ...
+    'ripple_reason','尚未计算','thd_pct',NaN,'thd_valid',false, ...
     'thd_reason','尚未计算','wideband_distortion_pct',NaN,'f_sw_Hz',NaN, ...
     'load_recovery_ms',NaN,'load_speed_dip_rpm',NaN,'torque_settle_ms',NaN, ...
     'metric_window_s',w,'electrical_cycles',0);
@@ -30,8 +31,57 @@ m.speed_source=sw; m.torque_source=st;
 [xw,yw]=clip(tw,wm,w); [xt,yt]=clip(tt,Te,w);
 m.speed_mean_rpm=trapz(xw,yw)/diff(w)*60/(2*pi);
 if P.w_ref~=0, m.speed_error_pct=100*(m.speed_mean_rpm-P.w_ref)/abs(P.w_ref); end
+% 稳态门禁：只做判定，不改已有公式。趋势项衡量窗口内漂移，
+% 避免用极差把转速纹波误判为未收敛。
+m.steady_trend_pct_threshold=0.2; m.steady_offset_pct_threshold=0.5;
+m.steady_definition=['窗口内转速最小二乘趋势相对变化<=0.2% ' ...
+    '且 |均值-给定|/|给定|<=0.5%'];
+m.speed_trend_pct=NaN; m.speed_offset_pct=NaN; m.speed_trend_raw_pct=NaN;
+m.steady_valid=false; m.steady_reason='尚未判定';
+rpmw=yw*60/(2*pi);
+if diff(w)<=0 || ~all(isfinite(rpmw))
+    m.steady_reason='窗口长度或转速数据无效';
+else
+    % 纯最小二乘在纹波周期数不足时会把纹波吸进斜率。先去掉OLS直线，
+    % 再从两侧残差均值差反推纹波贡献并扣除，保留真实拖尾斜率。
+    xr=xw-xw(1); L=xr(end);
+    c=polyfit(xr,rpmw,1);
+    res=rpmw-polyval(c,xr);
+    ripple_gain=0;
+    if L>0
+        third=L/3;
+        i1=xr<=third; i2=xr>=L-third;
+        if any(i1) && any(i2)
+            ripple_gain=abs(mean(res(i1))-mean(res(i2)))/L;
+        end
+    end
+    slope=max(0,abs(c(1))-ripple_gain);
+    mu=mean(rpmw);
+    if abs(mu)>1e-12
+        m.speed_trend_raw_pct=100*abs(c(1))*L/abs(mu);
+        m.speed_trend_pct=100*slope*L/abs(mu);
+    end
+    if P.w_ref~=0, m.speed_offset_pct=100*abs(mu-P.w_ref)/abs(P.w_ref); end
+    trend_bad=~isfinite(m.speed_trend_pct) || m.speed_trend_pct>m.steady_trend_pct_threshold;
+    offset_bad=isnan(m.speed_offset_pct) || m.speed_offset_pct>m.steady_offset_pct_threshold;
+    if trend_bad && offset_bad
+        m.steady_reason='趋势未收敛且存在稳态偏差';
+    elseif trend_bad
+        m.steady_reason='趋势未收敛';
+    elseif offset_bad
+        m.steady_reason='存在稳态偏差';
+    else
+        m.steady_valid=true; m.steady_reason='ok';
+    end
+end
 m.torque_mean_Nm=trapz(xt,yt)/diff(w);
 m.ripple_pp_Nm=max(yt)-min(yt); m.ripple_pct=100*m.ripple_pp_Nm/P.T_rated;
+% 峰峰值在未收敛窗口可能含拖尾漂移，只标记有效性，不清零数值。
+if m.steady_valid
+    m.ripple_valid=true; m.ripple_reason='ok';
+else
+    m.ripple_valid=false; m.ripple_reason='稳态窗口内未收敛；峰峰值可能含拖尾漂移';
+end
 [te,edges,se]=channel(o,'edges');
 m.switching_source=se; m.switching_window_s=w;
 m.switching_definition='三桥臂翻转数 / (6 * 窗口秒数)';
@@ -46,6 +96,15 @@ else
     m.f_sw_Hz=m.switching_edges/(6*diff(w));
 end
 m=spectrum(m,o,P,w);
+% 准稳态门禁联动：未通过稳态判定时不能保留旧 THD 值。
+% 若spectrum已给出更具体的拒绝原因（如2%判据），保留原因为不可覆盖的诊断。
+if ~m.steady_valid
+    m.thd_valid=false; m.thd_pct=NaN;
+    if contains(m.thd_reason,'准稳态') || strcmp(m.thd_reason,'ok') ...
+            || strcmp(m.thd_reason,'尚未计算')
+        m.thd_reason='稳态窗口内未满足准稳态（见steady_reason）';
+    end
+end
 m.response_kind='负载扰动恢复；不是直接转矩给定阶跃';
 m.direct_torque_step_measured=false; m.response_hold_s=.020;
 m.response_window_s=[P.t_step,min([w(2),tw(end),tt(end)])];

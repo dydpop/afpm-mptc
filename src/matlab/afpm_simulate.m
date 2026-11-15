@@ -2,7 +2,8 @@ function o = afpm_simulate(mode, mismatch, P)
 % o = afpm_simulate('mptc'|'foc', mismatch, P)
 % mismatch为控制器参数倍率结构，如struct('L',0.8,'psi',1.2)。
 % 真实plant始终使用P，状态[ialpha; ibeta; wm; theta_m]，每子步RK4。
-% MPTC预测采用冻结转速的一阶Euler离散近似，不等同于plant精度。
+% MPTC预测采用冻结转速的离散近似（P.predictor：'euler'一阶或'trapezoid'显式Heun），
+% 不等同于plant精度。P.direct_Tref非空时旁路速度环，直接给出转矩阶梯给定。
 % 控制时刻k测量；pending施加于[k,k+1)，新命令从下一控制区间生效。
 % applied_vec/command_vec：MPTC为1..8矢量编号；FOC为三相PWM占空比。
 % FOC区间内实际离散矢量见fine.vec，vec为区间末实际矢量。
@@ -14,9 +15,24 @@ if nargin<3, P=afpm_defaults(); end
 mode=validatestring(mode,{'mptc','foc'});
 if ~isfield(P,'delay_comp'), P.delay_comp=true; end
 if ~isfield(P,'log_fine'), P.log_fine=true; end
+if ~isfield(P,'predictor'), P.predictor='euler'; end
+if ~isfield(P,'direct_Tref'), P.direct_Tref=[]; end
+P.predictor=validatestring(P.predictor,{'euler','trapezoid'});
 validateattributes(P.Ts,{'numeric'},{'scalar','real','finite','positive'});
 validateattributes(P.Nsub,{'numeric'},{'scalar','integer','positive'});
 validateattributes(P.t_end,{'numeric'},{'scalar','real','finite','positive'});
+% 直接转矩阶梯：必须含t/from/to标量；限幅基准T_rated在下方统一校验。
+direct=~isempty(P.direct_Tref);
+if direct
+    D=P.direct_Tref;
+    if ~isstruct(D) || ~all(isfield(D,{'t','from','to'}))
+        error('afpm:DirectTref','P.direct_Tref须为struct且含t/from/to字段。');
+    end
+    for field={'t','from','to'}
+        validateattributes(D.(field{1}),{'numeric'},{'scalar','real','finite'});
+    end
+    validateattributes(D.t,{'numeric'},{'nonnegative'});
+end
 for field={'Rs','L','psi','p','J','Udc','T_rated'}
     validateattributes(P.(field{1}),{'numeric'},{'scalar','real','finite','positive'});
 end
@@ -63,11 +79,17 @@ if ~is_mptc
 end
 for k=1:N
     theta=Pc.p*x(4); c=cos(theta); s=sin(theta);
-    % 共同速度环：输出为Nm，而非电流；允许饱和状态朝恢复方向积分。
-    ew=wref-x(3); raw=P.Kp_w*ew+iw;
-    Tref=min(max(raw,-Tcap),Tcap);
-    if abs(raw)<=Tcap || raw*ew<0
-        iw=iw+P.Ki_w*ew*Ts;
+    if direct
+        % 直接转矩阶梯：旁路速度环，iw保持0；按步初时刻t0判断阶梯段。
+        Tref=min(max(D.from+(D.to-D.from)*((k-1)*Ts>=D.t),-Tcap),Tcap);
+        iw=0;
+    else
+        % 共同速度环：输出为Nm，而非电流；允许饱和状态朝恢复方向积分。
+        ew=wref-x(3); raw=P.Kp_w*ew+iw;
+        Tref=min(max(raw,-Tcap),Tcap);
+        if abs(raw)<=Tcap || raw*ew<0
+            iw=iw+P.Ki_w*ew*Ts;
+        end
     end
     o.Tref(k)=Tref; o.speed_integral(k)=iw;
     o.iq_ref(k)=Tref/(1.5*Pc.p*Pc.psi);
@@ -76,9 +98,9 @@ for k=1:N
         applied=V(pending_vec,:)';
         xa=x(1); xb=x(2); theta_predict=Pc.p*x(4);
         if P.delay_comp
-            [xa,xb,theta_predict]=predict_euler(xa,xb,theta_predict,x(3),Vc(pending_vec,1),Vc(pending_vec,2),Pc,Ts);
+            [xa,xb,theta_predict]=predict_state(P.predictor,xa,xb,theta_predict,x(3),Vc(pending_vec,1),Vc(pending_vec,2),Pc,Ts);
         end
-        [xa2,xb2,theta2]=predict_euler(xa,xb,theta_predict,x(3),Vc(:,1),Vc(:,2),Pc,Ts);
+        [xa2,xb2,theta2]=predict_state(P.predictor,xa,xb,theta_predict,x(3),Vc(:,1),Vc(:,2),Pc,Ts);
         pa=Pc.L*xa2+Pc.psi*cos(theta2); pb=Pc.L*xb2+Pc.psi*sin(theta2);
         Tp=1.5*Pc.p*Pc.psi*(-xa2*sin(theta2)+xb2*cos(theta2));
         flips=sum(S~=S(pending_vec,:),2);
@@ -173,17 +195,39 @@ for k=1:N
 end
 o.f_sw=sum(o.edges)/(6*N*Ts);
 o.mode=mode; o.plant_params=P; o.controller_params=Pc;
+o.predictor=P.predictor;
+if direct
+    o.response_mode='direct_torque_step';
+    o.direct_Tref=D;
+else
+    o.response_mode='speed_loop';
+end
 o.switch_states=S; o.voltage_vectors=V;
-o.prediction_method='冻结机械转速的一阶Euler控制预测；真实plant使用子步RK4';
+if strcmp(P.predictor,'euler')
+    o.prediction_method='冻结机械转速的一阶Euler控制预测；真实plant使用子步RK4';
+else
+    o.prediction_method='冻结机械转速的显式梯形/Heun控制预测（先用Euler估末态，再始末导数平均）；真实plant使用子步RK4';
+end
 o.pwm_method='零序注入两电平PWM；精确三角载波交点及负载阶跃分段RK4，固定h波形采样（非全带宽）';
 o.fine_sampling='固定h步末波形；vec为末段矢量，edges累计该h内全部实际桥臂翻转；左端事件计入本步，右端事件计入下一步';
 o.vector_semantics='MPTC:1..8离散编号；FOC:三相占空比；fine.vec始终为实际离散编号';
 end
 
-function [a,b,theta_next]=predict_euler(a,b,theta,wm,ua,ub,P,Ts)
+function [a,b,theta_next]=predict_state(method,a,b,theta,wm,ua,ub,P,Ts)
+% 冻结转速wm下预测一个控制周期；ua/ub可与a同尺寸（8x1候选电压向量化）。
+% theta一律按thm+Ts*wm线性推进，两种离散方式共用。
 we=P.p*wm;
-a=a+Ts*(ua-P.Rs*a+P.psi*we*sin(theta))/P.L;
-b=b+Ts*(ub-P.Rs*b-P.psi*we*cos(theta))/P.L;
+if strcmp(method,'trapezoid')
+    % 显式Heun：先用Euler估区间末态，再取始末导数平均推进。
+    a1=a+Ts*(ua-P.Rs*a+P.psi*we*sin(theta))/P.L;
+    b1=b+Ts*(ub-P.Rs*b-P.psi*we*cos(theta))/P.L;
+    th1=theta+Ts*we;
+    a=a+.5*Ts*((ua-P.Rs*a+P.psi*we*sin(theta))+(ua-P.Rs*a1+P.psi*we*sin(th1)))/P.L;
+    b=b+.5*Ts*((ub-P.Rs*b-P.psi*we*cos(theta))+(ub-P.Rs*b1-P.psi*we*cos(th1)))/P.L;
+else
+    a=a+Ts*(ua-P.Rs*a+P.psi*we*sin(theta))/P.L;
+    b=b+Ts*(ub-P.Rs*b-P.psi*we*cos(theta))/P.L;
+end
 theta_next=theta+Ts*we;
 end
 

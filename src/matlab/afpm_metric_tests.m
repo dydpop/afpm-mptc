@@ -7,7 +7,9 @@ names=["非整数时间窗纯正弦";"五次谐波10百分比";"直流不改变T
     "瞬时速度不稳无效";"显式窗口不被覆盖";"宽带残差不等于THD"; ...
     "40次谐波幅值";"负向旋转";"边沿窗口不对齐拒绝估计"; ...
     "强高次弱基波仍无效";"无负载阶跃不报告恢复";"窗口后扰动不污染响应"; ...
-    "窗口外停转重复相位不影响稳态THD"];
+    "窗口外停转重复相位不影响稳态THD"; ...
+    "稳态信号门禁通过";"上升拖尾判未收敛"; ...
+    "稳态偏差判偏差";"纹波无趋势仍判稳态"];
 passed=false(numel(names),1); detail=strings(numel(names),1);
 for k=1:numel(names)
     try
@@ -95,8 +97,14 @@ switch k
         ix=find(o.t>1,1); o.theta_e(ix)=o.theta_e(ix-1)-.1;
         m=afpm_metrics(o,P); assert(~m.thd_valid && contains(m.thd_reason,'单调'));
     case 13
-        o.wm=o.wm.*(1+.03*sin(2*pi*10*o.t)); m=afpm_metrics(o,P);
-        assert(~m.thd_valid && contains(m.thd_reason,'2%'));
+        wob=1+.03*sin(2*pi*10*o.t); o.wm=o.wm.*wob;
+        o.theta_e=.37+cumtrapz(o.t,P.p*o.wm); o.ia=sin(o.theta_e);
+        m=afpm_metrics(o,P);
+        % 3%纹波在窗口均值上无趋势，稳态门禁按趋势判定为稳态；
+        % THD 仍须无效。稳态门禁优先于频谱判据，故原因可能指向稳态或2%速度变化；
+        % 只要不是静默返回一个数即可。
+        assert(~m.thd_valid && isnan(m.thd_pct));
+        assert(contains(m.thd_reason,'2%') || contains(m.thd_reason,'准稳态'));
     case 14
         P.metric_window_s=[.7 1.1]; m=afpm_metrics(o,P);
         assert(isequal(m.metric_window_s,[.7 1.1]));
@@ -131,6 +139,47 @@ switch k
         o.wm(o.t>1.15)=0; o.Te(o.t>1.15)=0; m=afpm_metrics(o,P);
         assert(m.load_stable_at_end && m.torque_stable_at_end);
         assert(m.response_window_s(2)==1.1);
+    case 23
+        o.wm=o.wm.*(1+.0005*sin(2*pi*10*o.t)); m=afpm_metrics(o,P);
+        assert(m.steady_valid && m.ripple_valid);
+        assert(strcmp(m.steady_reason,'ok') && strcmp(m.ripple_reason,'ok'));
+        assert(m.thd_valid && isfinite(m.thd_pct));
+        d=sprintf('趋势%.3g%%，偏差%.3g%%，THD=%.3g%%', ...
+            m.speed_trend_pct,m.speed_offset_pct,m.thd_pct);
+    case 24
+        % 窗口内从294线性升到299 r/min，模拟速度环慢极点拖尾。
+        % 必须清掉 fine 记录，否则门禁仍读到原稳态细采样，测不到拖尾。
+        o.fine=struct('t',[]);
+        ramp=2*pi/60*interp1([0 P.t_end],[294 299],o.t,'linear');
+        o.wm=ramp;
+        o.theta_e=.37+2*pi*P.p/2/pi*cumtrapz(o.t,ramp);
+        m=afpm_metrics(o,P);
+        assert(~m.steady_valid);
+        assert(contains(m.steady_reason,'趋势未收敛'));
+        assert(m.speed_trend_pct>m.steady_trend_pct_threshold);
+        assert(~m.thd_valid && isnan(m.thd_pct) && contains(m.thd_reason,'准稳态'));
+        assert(~m.ripple_valid && isfinite(m.ripple_pp_Nm));
+        d=sprintf('趋势%.4g%%，ripple保留%.4gNm',m.speed_trend_pct,m.ripple_pp_Nm);
+    case 25
+        o.fine=struct('t',[]);
+        o.wm=(297.4*2*pi/60)*ones(size(o.t)); o.theta_e=.37+2*pi*(P.p*297.4/60)*o.t;
+        m=afpm_metrics(o,P);
+        assert(~m.steady_valid && contains(m.steady_reason,'稳态偏差'));
+        assert(m.speed_trend_pct<m.steady_trend_pct_threshold);
+        assert(~isnan(m.speed_offset_pct) && m.speed_offset_pct>m.steady_offset_pct_threshold);
+        assert(isnan(m.thd_pct) && ~m.thd_valid && ~m.ripple_valid);
+        d=sprintf('偏差%.4g%%，趋势%.3g%%',m.speed_offset_pct,m.speed_trend_pct);
+    case 26
+        % 300±3 r/min 正弦纹波：极差达2%，但无趋势。
+        wob=2*pi/60*(300+3*sin(2*pi*8*o.t));
+        o.wm=wob;
+        o.theta_e=.37+2*pi*P.p/2/pi*cumtrapz(o.t,wob);
+        P.w_ref=300; m=afpm_metrics(o,P);
+        assert(m.steady_valid);
+        assert(m.speed_trend_pct<m.steady_trend_pct_threshold);
+        assert(m.ripple_valid && m.thd_valid);
+        d=sprintf('极差%.3g%%，趋势%.4g%% → 稳态', ...
+            100*(max(wob)-min(wob))/mean(wob),m.speed_trend_pct);
 end
 end
 
