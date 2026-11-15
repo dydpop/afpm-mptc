@@ -286,19 +286,20 @@ if isfile(fullfile(out,'robustness_metrics.csv'))
 end
 if isfile(fullfile(out,'direct_step_metrics.csv')) && isfile(fullfile(out,'direct_step_mptc.mat'))
     M=load(fullfile(out,'direct_step_mptc.mat')); F=load(fullfile(out,'direct_step_foc.mat'));
+    n=max(1,round(1e-3/median(diff(M.o.t))));   % 1 ms 因果均值，与 rise_ms 口径一致
     f=figure('Visible','off','Color','w','Position',[80 80 1000 620]); tiledlayout(2,1,'TileSpacing','compact');
     nexttile; plot(M.o.t,M.o.Te,'Color',[.75 .82 .9],'LineWidth',.5); hold on;
     plot(F.o.t,F.o.Te,'Color',[.95 .80 .72],'LineWidth',.5);
-    plot(M.o.t,movmean(M.o.Te,[400 0]),'Color',colors(1,:),'LineWidth',1.4);
-    plot(F.o.t,movmean(F.o.Te,[400 0]),'Color',colors(2,:),'LineWidth',1.4);
-    xline(M.Q.direct_Tref.t,'k--'); xlim([M.Q.direct_Tref.t-0.05 M.Q.direct_Tref.t+0.25]);
+    plot(M.o.t,movmean(M.o.Te,[n-1 0]),'Color',colors(1,:),'LineWidth',1.4);
+    plot(F.o.t,movmean(F.o.Te,[n-1 0]),'Color',colors(2,:),'LineWidth',1.4);
+    xline(M.Q.direct_Tref.t,'k--'); xlim([M.Q.direct_Tref.t-0.01 M.Q.direct_Tref.t+0.06]);
     ylabel('Torque (N m)'); grid on; legend('MPTC','PWM FOC','MPTC 1 ms avg','FOC 1 ms avg','Location','southeast');
     title('Direct torque-reference step 2 to 8 N m (speed loop bypassed)');
     nexttile; plot(M.o.t,M.o.wm*60/(2*pi),'Color',colors(1,:)); hold on;
     plot(F.o.t,F.o.wm*60/(2*pi),'Color',colors(2,:));
-    xline(M.Q.direct_Tref.t,'k--'); xlim([0 M.P.t_end]); ylabel('Speed (rpm)'); xlabel('Time (s)');
-    grid on; legend('MPTC','PWM FOC','Location','best');
-    title('Speed is a consequence here, not the regulated quantity');
+    xline(M.Q.direct_Tref.t,'k--'); xlim([0 M.Q.t_end]); ylabel('Speed (rpm)'); xlabel('Time (s)');
+    grid on; legend('MPTC','PWM FOC','Location','northwest');
+    title('Speed is a consequence here, not the regulated quantity (testbed J = 0.05 kg m^2)');
     exportgraphics(f,fullfile(figdir,'direct_torque_step.png'),'Resolution',300); close(f);
 end
 end
