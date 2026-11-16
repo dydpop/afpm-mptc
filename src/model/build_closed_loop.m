@@ -5,8 +5,10 @@ function modelPath = build_closed_loop()
 % 参数统一取自 afpm_defaults()，写入模型 workspace，不硬编码第二套参数。
 % 模型中不得出现 From Workspace 或 afpm_simulate 等预计算激励。
 %
-% ==== 状态：未完成（WIP，2026-11-16）====
-% 尚未产出可交付的闭环模型，不要把本文件当作可用构建入口。已确认的阻塞点：
+% ==== 状态：已弃用（2026-11-16）====
+% 本文件是"连续 plant + 离散控制器"的最初尝试，未产出可运行模型。
+% 已被 src/model/build_discrete_loop.m（全离散闭环）取代，保留仅为记录阻塞点。
+% 已确认的阻塞点：
 %   1) 控制器 MATLAB Function 块的 8 候选向量化输出与连续 plant 输入端口
 %      维度不匹配，逐点调试后仍未稳定通过 update 编译；
 %   2) 连续 plant + 离散控制器在同一模型中需要速率转换与代数环处理，

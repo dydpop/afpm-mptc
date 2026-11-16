@@ -1,0 +1,10 @@
+AFPM 闭环一致性验证 | 2026-11-16 15:14:47
+MATLAB 24.2.0.2712019 (R2024b) | Simulink license: 1
+预设容差：转速 0.500 r/min，转矩 RMS 0.150 N*m，电流 RMS 0.150 A，时长 0.60 s
+模型运行 12.7 s；Simulink 采样点 12000；脚本采样点 12000
+统计窗口 t>=0.05 s，共 11001 点
+speed_rpm    max=1.64e-09 rms=8.3e-10 tol=0.5 -> true
+torque_Nm    max=1.13e-10 rms=5.95e-11 tol=0.15 -> true
+current_A    max=8.78e-11 rms=3.85e-11 tol=0.15 -> true
+末速：Simulink 288.26 r/min，脚本 288.26 r/min
+结论文本只允许写"离散实现与数值脚本一致性"，不得写成接入主电路的开关级闭环。
