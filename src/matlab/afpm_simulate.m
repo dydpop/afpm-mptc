@@ -21,6 +21,8 @@ if ~isfield(P,'foc_gain_mode'), P.foc_gain_mode='estimated'; end
 if ~isfield(P,'cost_mode'), P.cost_mode='weighted'; end
 if ~isfield(P,'lex_torque_tol_pct'), P.lex_torque_tol_pct=10; end
 if ~isfield(P,'lex_flux_tol_pct'), P.lex_flux_tol_pct=10; end
+if ~isfield(P,'predict_form'), P.predict_form='current'; end
+P.predict_form=validatestring(P.predict_form,{'current','flux'});
 P.predictor=validatestring(P.predictor,{'euler','trapezoid'});
 P.cost_mode=validatestring(P.cost_mode,{'weighted','lexicographic'});
 P.foc_gain_mode=validatestring(P.foc_gain_mode,{'estimated','nominal'});
@@ -78,6 +80,9 @@ for k=1:numel(fine_fields)
     else, o.fine.(fine_fields{k})=zeros(0,1); end
 end
 x=zeros(4,1); iw=0; integral_dq=zeros(2,1);
+% 磁链积分形式的控制器状态：初始电流为零、机械角为零，故 ψ=ψf∠0。
+psia=Pc.psi; psib=0;
+o.flux_alpha=nan(N,1); o.flux_beta=nan(N,1);
 pending_vec=7; pending_voltage=[0;0]; pending_duty=[.5 .5 .5];
 last_bits=[0 0 0]; wref0=P.w_ref*2*pi/60; Tcap=1.5*P.T_rated;
 if isfield(P,'w_ref_profile') && ~isempty(P.w_ref_profile)
@@ -125,12 +130,33 @@ for k=1:N
         o.applied_vec(k)=pending_vec;
         applied=V(pending_vec,:)';
         xa=x(1); xb=x(2); theta_predict=Pc.p*x(4);
+        if strcmp(P.predict_form,'flux')
+            % 磁链积分形式：ψ(k+1)=ψ(k)+Ts(u-Rs i)，传播过程不含 L。
+            % L 只在"由磁链反算电流" i=(ψ-ψf e^{jθ})/L 时出现，
+            % 因此 L 失配的作用路径由积分斜率变为幅值缩放。
+            ua1=V(pending_vec,1); ub1=V(pending_vec,2);
+            if P.delay_comp
+                bpa=psia+Ts*(ua1-Pc.Rs*x(1)); bpb=psib+Ts*(ub1-Pc.Rs*x(2));
+                bth=Pc.p*x(4)+Ts*Pc.p*x(3);
+            else
+                bpa=psia; bpb=psib; bth=Pc.p*x(4);
+            end
+            bia=(bpa-Pc.psi*cos(bth))/Pc.L; bib=(bpb-Pc.psi*sin(bth))/Pc.L;
+            pa=bpa+Ts*(Vc(:,1)-Pc.Rs*bia);
+            pb=bpb+Ts*(Vc(:,2)-Pc.Rs*bib);
+            th2=bth+Ts*Pc.p*x(3);
+            ia2=(pa-Pc.psi*cos(th2))/Pc.L; ib2=(pb-Pc.psi*sin(th2))/Pc.L;
+            Tp=1.5*Pc.p*(pa.*ib2-pb.*ia2);
+            psia=psia+Ts*(ua1-Pc.Rs*x(1)); psib=psib+Ts*(ub1-Pc.Rs*x(2));
+            o.flux_alpha(k)=psia; o.flux_beta(k)=psib;
+        else
         if P.delay_comp
             [xa,xb,theta_predict]=predict_state(P.predictor,xa,xb,theta_predict,x(3),Vc(pending_vec,1),Vc(pending_vec,2),Pc,Ts);
         end
         [xa2,xb2,theta2]=predict_state(P.predictor,xa,xb,theta_predict,x(3),Vc(:,1),Vc(:,2),Pc,Ts);
         pa=Pc.L*xa2+Pc.psi*cos(theta2); pb=Pc.L*xb2+Pc.psi*sin(theta2);
         Tp=1.5*Pc.p*Pc.psi*(-xa2*sin(theta2)+xb2*cos(theta2));
+        end
         flips=sum(S~=S(pending_vec,:),2);
         if strcmp(P.cost_mode,'lexicographic')
             % 分层筛选（容差序贯）：先转矩带、再磁链带、最后取切换最少者；

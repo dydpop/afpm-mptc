@@ -1,2 +1,2 @@
 run_id,source_fingerprint,status,expected_sweep_rows,expected_robustness_rows,completed_utc_note,completed_local
-run_20261116_184540,f884ea36b6695f981e4890a604485078c5f3dd00a32021080b0c52ec08e29eb0,complete,30,19,local time recorded,2026-11-16 18:58:22
+run_20261116_193505,0666f58efa9a8778bc0f356f39e047ea3fc89084260c01594c885f6b3f1831af,complete,30,19,local time recorded,2026-11-16 19:58:05

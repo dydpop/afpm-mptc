@@ -26,5 +26,6 @@ P.foc_gain_mode = 'estimated'; % 'estimated'按估计参数整定（默认）；
 P.cost_mode = 'weighted';  % MPTC代价函数：'weighted'加权求和（默认）或'lexicographic'分层筛选
 P.lex_torque_tol_pct = 10; % 分层第一层转矩容差，%T_rated
 P.lex_flux_tol_pct = 10;   % 分层第二层磁链容差，%ψf
+P.predict_form = 'current'; % MPTC预测方程：'current'电流微分（默认）或'flux'磁链积分
 P.direct_Tref = [];  % 非空时旁路速度环：struct('t',阶跃时刻s,'from',,'to',) N*m
 end

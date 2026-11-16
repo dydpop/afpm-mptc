@@ -271,6 +271,40 @@ if any(strcmp(task,{'refine','all'}))
     end
     disp(D);
 end
+if any(strcmp(task,{'predform','all'}))
+    % 预测方程形式对比：电流微分 vs 磁链积分（开题5.2技术方案要求）。
+    D = table(); CS = {{'',1.0};{'L',1.2};{'psi',1.2};{'psi',0.8}};
+    for pf = {'current','flux'}
+        for i = 1:numel(CS)
+            Q = P; Q.predict_form = pf{1};
+            if isempty(CS{i}{1}), mm = struct(); else, mm = struct(CS{i}{1},CS{i}{2}); end
+            if isempty(CS{i}{1})
+                id = sprintf('pred_%s_nominal',pf{1});
+            else
+                id = sprintf('pred_%s_%s%03d',pf{1},CS{i}{1},round(100*CS{i}{2}));
+            end
+            fprintf('PREDFORM %s\n',id);
+            o = afpm_simulate('mptc',mm,Q); m = afpm_metrics(o,Q);
+            if isfield(Q,'metric_window_s'), mw = Q.metric_window_s; else, mw = 0.4; end
+            qd = o.t>=Q.t_end-mw;
+            idpk = max(abs(o.id(qd)));
+            if strcmp(pf{1},'flux')
+                fmag = mean(hypot(o.flux_alpha(qd),o.flux_beta(qd)));
+            else
+                fmag = NaN;
+            end
+            D = [D; table(string(id),string(pf{1}),string(CS{i}{1}),CS{i}{2}, ...
+                m.speed_mean_rpm,m.ripple_pp_Nm,m.thd_pct,m.thd_full_pct,m.f_sw_Hz, ...
+                idpk,fmag,m.thd_valid,m.steady_valid, ...
+                'VariableNames',{'case_id','predict_form','param','factor','speed_rpm', ...
+                'ripple_Nm','thd_2_40_pct','thd_2_200_pct','f_sw_Hz','id_peak_A', ...
+                'flux_mag_Wb','thd_valid','steady_valid'})]; %#ok<AGROW>
+            save(fullfile(out,[id '.mat']),'P','Q','o','m','-v7');
+            writetable(D,fullfile(out,'predform_metrics.csv'));
+        end
+    end
+    disp(D);
+end
 if any(strcmp(task,{'protocolB','all'}))
     % 开题口径复核：控制周期100us + 载波10kHz（两者同步，每载波一次占空比更新）。
     % 与主基准(50us/1.344kHz)并列报告，不替换主基准。
@@ -562,5 +596,25 @@ if isfile(fullfile(out,'baseline_mptc.mat')) && isfile(fullfile(out,'baseline_fo
             A.m.thd_pct,B.m.thd_pct,A.m.thd_full_pct,B.m.thd_full_pct));
         exportgraphics(f,fullfile(figdir,'harmonic_spectrum.png'),'Resolution',300); close(f);
     end
+end
+if isfile(fullfile(out,'predform_metrics.csv'))
+    % 图契约：核心结论=预测方程形式决定失配敏感性方向。
+    % 主面板给脉动（判定量），次面板给 d 轴电流峰值（失效机理量）。
+    D = readtable(fullfile(out,'predform_metrics.csv'),'TextType','string');
+    lbl = ["nominal","L x1.2","psi x1.2","psi x0.8"];
+    f = figure('Visible','off','Color','w','Position',[80 80 980 420]);
+    tiledlayout(1,2,'TileSpacing','compact','Padding','compact');
+    % 直接按行序取值，避免用逻辑条件拼凑（同一 factor 可能对应不同参数）。
+    cur = D(D.predict_form=="current",:); flx = D(D.predict_form=="flux",:);
+    assert(height(cur)==4 && height(flx)==4,'预测形式对比行数异常');
+    rip = [cur.ripple_Nm, flx.ripple_Nm]; idp = [cur.id_peak_A, flx.id_peak_A];
+    nexttile; b = bar(rip); b(1).FaceColor = colors(1,:); b(2).FaceColor = colors(2,:);
+    set(gca,'XTickLabel',cellstr(lbl)); ylabel('Torque ripple, p-p (N m)'); grid on;
+    legend('Current-derivative prediction','Flux-integral prediction','Location','northwest');
+    title('(a) Ripple: the two forms fail on different parameters');
+    nexttile; b2 = bar(idp); b2(1).FaceColor = colors(1,:); b2(2).FaceColor = colors(2,:);
+    set(gca,'XTickLabel',cellstr(lbl)); ylabel('Peak |i_d| in window (A)'); grid on;
+    title('(b) d-axis current excursion');
+    exportgraphics(f,fullfile(figdir,'prediction_form.png'),'Resolution',300); close(f);
 end
 end
