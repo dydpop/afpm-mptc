@@ -176,6 +176,34 @@ if any(strcmp(task,{'ramp','all'}))
     end
     disp(D);
 end
+if any(strcmp(task,{'fw','all'}))
+    % 弱磁延伸：母线电压与转速组合，检验电压受限时的维持能力。
+    % 基准电压下(250V)的理论基速约1900 r/min，降到60%(150V)约1180 r/min。
+    D = table(); CS = [250 1800; 150 1100; 150 1500];
+    for mode = {'mptc','foc'}
+        for i = 1:size(CS,1)
+            Q = P; Q.Udc = CS(i,1); Q.w_ref = CS(i,2); Q.t_end = 2.6;
+            id = sprintf('fw_%s_%dV_%drpm',mode{1},CS(i,1),CS(i,2));
+            fprintf('FW %s\n',id);
+            o = afpm_simulate(mode{1},struct(),Q);
+            s = fw_response(o,Q);
+            assert_fields(s,{'final_speed_rpm','speed_err_pct','speed_held', ...
+                'voltage_utilization','saturated_pct','id_mean_A','peak_current_A','f_sw_Hz'});
+            D = [D; table(string(id),string(mode{1}),CS(i,1),CS(i,2), ...
+                s.final_speed_rpm,s.speed_err_pct,s.speed_held,s.voltage_utilization, ...
+                s.saturated_pct,s.id_mean_A,s.peak_current_A,s.f_sw_Hz, ...
+                'VariableNames',{'case_id','mode','Udc_V','w_ref_rpm','final_speed_rpm', ...
+                'speed_err_pct','speed_held','voltage_utilization','saturated_pct', ...
+                'id_mean_A','peak_current_A','f_sw_Hz'})]; %#ok<AGROW>
+            save(fullfile(out,[id '.mat']),'P','Q','o','s','-v7');
+            writetable(D,fullfile(out,'fieldweakening_metrics.csv'));
+            fprintf('  speed %.1f (ref %d) err %.2f%% util %.3f sat %.1f%% id %.2f A\n', ...
+                s.final_speed_rpm,CS(i,2),s.speed_err_pct,s.voltage_utilization, ...
+                s.saturated_pct,s.id_mean_A);
+        end
+    end
+    disp(D);
+end
 if any(strcmp(task,{'figures','all'}))
     A=readtable(fullfile(out,'sweep_metrics.csv'),'TextType','string');
     B=readtable(fullfile(out,'robustness_metrics.csv'),'TextType','string');
@@ -203,6 +231,37 @@ for k=1:numel(files)
     md.update(typecast(uint8(bytes),'int8'));
 end
 fingerprint=lower(reshape(dec2hex(typecast(md.digest(),'uint8'),2).',1,[]));
+end
+
+function assert_fields(s,names)
+% 指标结构一旦缺字段就直接报错，避免表格引用错名导致整批跑到一半才崩。
+missing = names(~isfield(s,names));
+assert(isempty(missing),'run_research:Field','指标缺少字段：%s',strjoin(missing,', '));
+end
+
+function s = fw_response(o,Q)
+% 弱磁延伸评价：只看能否维持给定、电压利用率与饱和比例，不与基速工况混谈。
+t = o.t(:); q = t>=t(end)-0.4;
+s.final_speed_rpm = mean(o.wm(q))*60/(2*pi);
+s.speed_err_pct = 100*(s.final_speed_rpm-Q.w_ref)/abs(Q.w_ref);
+s.speed_held = abs(s.speed_err_pct) < 2;
+vlim = Q.Udc/sqrt(3);
+% 两方案的可用电压上限不同：MPTC 用离散矢量(幅值2Udc/3)，FOC 受正弦调制限制(Udc/sqrt(3))。
+% 归一化到各自的物理上限，才不至于让 MPTC 的利用率看起来恒大于1。
+if strcmp(o.mode,'mptc'), vbase = 2*Q.Udc/3; else, vbase = vlim; end
+umag = hypot(o.applied_voltage(:,1),o.applied_voltage(:,2));
+s.voltage_utilization = mean(umag(q))/vbase;
+s.voltage_base_V = vbase;
+s.voltage_utilization_note = 'MPTC normalized by 2Udc/3 (six-step vector), FOC by Udc/sqrt(3)';
+if isfield(o,'current_saturated') && ~isempty(o.current_saturated)
+    s.saturated_pct = 100*mean(o.current_saturated(q));
+else
+    s.saturated_pct = NaN;   % MPTC 无电流环，不以该口义；
+end
+s.id_mean_A = mean(o.id(q));
+s.peak_current_A = max(abs(o.ia(q)));
+s.f_sw_Hz = sum(o.edges(q))/(6*sum(q)*median(diff(t)));
+s.note = 'no field-weakening module is implemented; id_ref stays 0 and MPTC flux reference stays psi';
 end
 
 function r = ramp_response(o,Q)

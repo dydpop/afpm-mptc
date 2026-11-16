@@ -19,3 +19,6 @@ slprj/
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# Simulink/建模临时目录
+src/model/_dbg/
