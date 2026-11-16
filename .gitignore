@@ -2,7 +2,9 @@
 data/**/*.mat
 # Rebuildable research trajectories stay local; summary CSVs are versioned.
 # Repeated diagnostic console logs can contain superseded runs.
+# 只保留正式批次日志；临时诊断日志不入库
 data/research_v2/*log.txt
+!data/research_v2/round*_log.txt
 data/*.slx.r*/*
 *.slx.r*
 *.autosave

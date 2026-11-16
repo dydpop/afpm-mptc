@@ -152,6 +152,30 @@ if any(strcmp(task,{'step','all'}))
     end
     disp(D);
 end
+if any(strcmp(task,{'ramp','all'}))
+    D = table();
+    for mode = {'mptc','foc'}
+        % 先用1.8 s在150 r/min建立工作点（从零起转需约1.7 s），再0.6 s升速到300；
+        % 负载从头加上，避免中途阶跃干扰。
+        Q = P; Q.t_step = 0; Q.w_ref_profile = [0 1.8 2.4; 150 150 300];
+        Q.t_end = 3.2;
+        id = sprintf('speed_ramp_%s',mode{1});
+        fprintf('RAMP %s\n',id);
+        o = afpm_simulate(mode{1},struct(),Q);
+        r = ramp_response(o,Q);
+        D = [D; table(string(id),string(mode{1}),r.initial_speed_rpm,r.max_err_rpm, ...
+            r.rms_err_rpm,r.peak_torque_Nm,r.peak_current_A,r.peak_torque_pct_rated, ...
+            r.settle_ms,r.f_sw_Hz,r.final_speed_rpm,'VariableNames',{'case_id','mode', ...
+            'initial_speed_rpm','max_track_err_rpm','rms_track_err_rpm','peak_torque_Nm', ...
+            'peak_current_A','peak_torque_pct_rated','post_ramp_settle_ms','f_sw_Hz', ...
+            'final_speed_rpm'})]; %#ok<AGROW>
+        save(fullfile(out,[id '.mat']),'P','Q','o','r','-v7');
+        writetable(D,fullfile(out,'ramp_metrics.csv'));
+        fprintf('  init %.2f rpm | maxErr %.2f rpm | rms %.2f | peakT %.2f Nm | fsw %.0f Hz\n', ...
+            r.initial_speed_rpm,r.max_err_rpm,r.rms_err_rpm,r.peak_torque_Nm,r.f_sw_Hz);
+    end
+    disp(D);
+end
 if any(strcmp(task,{'figures','all'}))
     A=readtable(fullfile(out,'sweep_metrics.csv'),'TextType','string');
     B=readtable(fullfile(out,'robustness_metrics.csv'),'TextType','string');
@@ -179,6 +203,34 @@ for k=1:numel(files)
     md.update(typecast(uint8(bytes),'int8'));
 end
 fingerprint=lower(reshape(dec2hex(typecast(md.digest(),'uint8'),2).',1,[]));
+end
+
+function r = ramp_response(o,Q)
+% 升速工况：给定按折线 P.w_ref_profile 变化；指标只取最后一个升速区间，
+% 此前用于建立初始工作点（例如先在150 r/min稳定）。
+t = o.t(:); Ts = median(diff(t)); pr = Q.w_ref_profile;
+tc = max(t,pr(1,1)); tc = min(tc,pr(1,end));
+ref = interp1(pr(1,:),pr(2,:),tc,'linear');
+err = ref - o.wm(:)*60/(2*pi);
+t1 = pr(1,end-1); t2 = pr(1,end);
+seg = t>=t1 & t<=t2;
+r.ramp_interval_s = [t1 t2];
+r.initial_speed_rpm = mean(o.wm(t>=t1-.2 & t<t1))*60/(2*pi);
+r.max_err_rpm = max(abs(err(seg)));
+r.rms_err_rpm = sqrt(mean(err(seg).^2));
+r.peak_torque_Nm = max(abs(o.Te(seg)));
+r.peak_current_A = max(abs(o.ia(seg)));
+r.peak_torque_pct_rated = 100*r.peak_torque_Nm/Q.T_rated;
+r.f_sw_Hz = sum(o.edges(seg))/(6*sum(seg)*Ts);
+r.final_speed_rpm = mean(o.wm(t>=t(end)-.2))*60/(2*pi);
+r.err_definition = 'given minus measured, evaluated on the last ramp interval only';
+r.settle_ms = NaN;
+post = t>=t2 & abs(err)<=.02*abs(pr(2,end));
+if any(post) && post(end)
+    lastbad = find(~post & t>=t2,1,'last');
+    if isempty(lastbad), k = find(post,1); else, k = find(t>t(lastbad),1); end
+    if ~isempty(k) && t(end)-t(k)>=.020-1e-9, r.settle_ms = (t(k)-t2)*1e3; end
+end
 end
 
 function s = step_response(o,Q)
@@ -301,5 +353,25 @@ if isfile(fullfile(out,'direct_step_metrics.csv')) && isfile(fullfile(out,'direc
     grid on; legend('MPTC','PWM FOC','Location','northwest');
     title('Speed is a consequence here, not the regulated quantity (testbed J = 0.05 kg m^2)');
     exportgraphics(f,fullfile(figdir,'direct_torque_step.png'),'Resolution',300); close(f);
+end
+if isfile(fullfile(out,'ramp_metrics.csv')) && isfile(fullfile(out,'speed_ramp_mptc.mat'))
+    M=load(fullfile(out,'speed_ramp_mptc.mat')); F=load(fullfile(out,'speed_ramp_foc.mat'));
+    n=max(1,round(1e-3/median(diff(M.o.t))));
+    f=figure('Visible','off','Color','w','Position',[80 80 1000 660]); tiledlayout(2,1,'TileSpacing','compact');
+    pr=M.Q.w_ref_profile; tt=linspace(0,M.Q.t_end,800);
+    ref=interp1(pr(1,:),pr(2,:),min(max(tt,pr(1,1)),pr(1,end)),'linear');
+    nexttile; plot(tt,ref,'k--','LineWidth',1.2); hold on;
+    plot(M.o.t,M.o.wm*60/(2*pi),'Color',colors(1,:));
+    plot(F.o.t,F.o.wm*60/(2*pi),'Color',colors(2,:));
+    ylabel('Speed (rpm)'); grid on; legend('Reference','MPTC','PWM FOC','Location','southeast');
+    title('150 rpm hold, then ramp to 300 rpm in 0.6 s, 8 N m load from start');
+    nexttile;
+    plot(M.o.t,movmean(M.o.Te,[n-1 0]),'Color',colors(1,:)); hold on;
+    plot(F.o.t,movmean(F.o.Te,[n-1 0]),'Color',colors(2,:));
+    yline(M.Q.T_rated,'k:'); xlim(pr(1,end-1:end)+[-0.2 0.6]);
+    ylim([0 13]); ylabel('Torque, 1 ms avg (N m)'); xlabel('Time (s)'); grid on;
+    legend('MPTC','PWM FOC','Rated 11.9 N m','Location','southeast');
+    title('Torque during ramp: headroom, not a tuning target');
+    exportgraphics(f,fullfile(figdir,'speed_ramp.png'),'Resolution',300); close(f);
 end
 end

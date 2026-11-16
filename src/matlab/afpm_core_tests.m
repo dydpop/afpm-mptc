@@ -4,14 +4,15 @@ cases = {@test_defaults, @test_zero, @test_vectors_power, ...
     @test_delay, @test_speed_pi, @test_pwm, @test_fine, ...
     @test_mismatch, @test_current_limit, @test_loaded, ...
     @test_pwm_events, @test_pwm_convergence, ...
-    @test_direct_torque_step, @test_predictor_switch};
+    @test_direct_torque_step, @test_predictor_switch, @test_ramp_profile};
 names = {'默认参数与研究假设', '零电流初值及零负载', ...
     '电压矢量及电磁功率符号', '一拍物理延时与补偿开关', ...
     '统一转矩PI及条件积分', '真实PWM整数翻转计数', ...
     '步末时间与子步记录', '参数失配仅作用控制器', ...
     'FOC电压矢量限幅', '负载下两方案转速跟踪', ...
     '精确PWM窄脉冲全计数与冻结队列', 'FOC分段RK4步长收敛', ...
-    '直接转矩阶跃旁路速度环', '预测离散方式切换'};
+    '直接转矩阶跃旁路速度环', '预测离散方式切换', ...
+    '升速给定插值与端点保持'};
 tests = repmat(struct('name','','pass',false,'detail',''),numel(cases),1);
 for k = 1:numel(cases)
     tests(k).name = names{k};
@@ -306,4 +307,21 @@ end
 dTe=res{1}.Te-res{2}.Te;
 assert(~all(isnan(dTe)));
 d=sprintf('带0.8倍失配；euler与trapezoid均可运行，MPTC转矩差绝对值均值=%.4g N·m（不判定优劣）',mean(abs(dTe)));
+end
+
+function d = test_ramp_profile()
+% 升速给定：区间内线性、区间外保持端点；相同初始条件下更高的末端给定
+% 必须导致更大的平均转矩指令（不涉及控制优劣判断）。
+P=afpm_defaults(); P.t_end=.06; P.T_load=0; P.w_ref=20;
+o1=afpm_simulate('mptc',[],P);
+P2=P; P2.w_ref_profile=[0 .06; 20 60];
+o2=afpm_simulate('mptc',[],P2);
+assert(all(isfinite(o2.wm)) && all(isfinite(o2.Tref)));
+assert(mean(o2.Tref) > mean(o1.Tref), '升速给定应带来更大平均转矩');
+% 端点保持：仿真延长到升速区间之后，转速应继续追向末端给定。
+P3=P; P3.t_end=.2; P3.w_ref_profile=[0 .05; 20 60];
+o3=afpm_simulate('mptc',[],P3);
+assert(abs(o3.wm(end)*60/(2*pi)-60) < 2, '升速结束后应保持末端给定');
+d=sprintf('平均Tref %.3f>%.3f N·m；结束后%.2f r/min（给定60）', ...
+    mean(o2.Tref),mean(o1.Tref),o3.wm(end)*60/(2*pi));
 end

@@ -71,13 +71,26 @@ for k=1:numel(fine_fields)
 end
 x=zeros(4,1); iw=0; integral_dq=zeros(2,1);
 pending_vec=7; pending_voltage=[0;0]; pending_duty=[.5 .5 .5];
-last_bits=[0 0 0]; wref=P.w_ref*2*pi/60; Tcap=1.5*P.T_rated;
+last_bits=[0 0 0]; wref0=P.w_ref*2*pi/60; Tcap=1.5*P.T_rated;
+if isfield(P,'w_ref_profile') && ~isempty(P.w_ref_profile)
+    pr=P.w_ref_profile;   % 2xN：第一行时刻(升序)，第二行对应转速(rpm)
+    validateattributes(pr,{'numeric'},{'2d','real','finite'});
+    assert(size(pr,1)==2 && size(pr,2)>=2 && all(diff(pr(1,:))>0), ...
+        'afpm:Profile','升速给定须为2xN且时刻严格递增');
+end
 Kpi=Pc.L*400; Kii=Pc.Rs*400; Vlim=P.Udc/sqrt(3);
 if ~is_mptc
     validateattributes(P.f_sw_foc,{'numeric'},{'scalar','real','finite','positive'});
     o.current_Kp=Kpi; o.current_Ki=Kii;
 end
 for k=1:N
+    t0=(k-1)*Ts;
+    % 转速给定：可选折线（pr 2xN），端点外保持端点值。
+    if exist('pr','var')
+        wref=interp1(pr(1,:),pr(2,:),min(max(t0,pr(1,1)),pr(1,end)),'linear')*2*pi/60;
+    else
+        wref=wref0;
+    end
     theta=Pc.p*x(4); c=cos(theta); s=sin(theta);
     if direct
         % 直接转矩阶梯：旁路速度环，iw保持0；按步初时刻t0判断阶梯段。
