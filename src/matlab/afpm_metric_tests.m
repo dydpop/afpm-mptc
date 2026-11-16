@@ -9,7 +9,7 @@ names=["非整数时间窗纯正弦";"五次谐波10百分比";"直流不改变T
     "强高次弱基波仍无效";"无负载阶跃不报告恢复";"窗口后扰动不污染响应"; ...
     "窗口外停转重复相位不影响稳态THD"; ...
     "稳态信号门禁通过";"上升拖尾判未收敛"; ...
-    "稳态偏差判偏差";"纹波无趋势仍判稳态"];
+    "稳态偏差判偏差";"纹波无趋势仍判稳态";"全频段THD与低次并列"];
 passed=false(numel(names),1); detail=strings(numel(names),1);
 for k=1:numel(names)
     try
@@ -180,6 +180,20 @@ switch k
         assert(m.ripple_valid && m.thd_valid);
         d=sprintf('极差%.3g%%，趋势%.4g%% → 稳态', ...
             100*(max(wob)-min(wob))/mean(wob),m.speed_trend_pct);
+    case 27
+        % 全频段THD：必须与低次口径并列，且不改变原 thd_pct 的定义。
+        m=afpm_metrics(o,P);
+        assert(m.thd_valid && isfinite(m.thd_pct));
+        assert(isfinite(m.thd_full_pct) && m.thd_full_pct>=m.thd_pct-1e-9);
+        assert(numel(m.harmonic_peak_A)==40 && numel(m.harmonic_peak_full_A)==200);
+        assert(isequal(m.thd_full_harmonics,2:200));
+        % 纯正弦(仅基波)时两者都应接近0，且全频段不小于低次。
+        o2=o; o2.theta_e=o.theta_e;
+        o2.ia=sin(o.theta_e);
+        m2=afpm_metrics(o2,P);
+        assert(isfinite(m2.thd_full_pct) && m2.thd_full_pct<0.5);
+        d=sprintf('2-40次%.3f%%，2-200次%.3f%%，开关频段%.3f%%', ...
+            m.thd_pct,m.thd_full_pct,m.switching_band_pct);
 end
 end
 

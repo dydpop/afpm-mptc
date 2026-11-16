@@ -22,5 +22,6 @@ P.f_sw_foc = 6500;   % 载波设定频率，Hz；不代表实际统计频率
 P.delay_comp = true; % 仅控制MPTC预测补偿；物理一拍延时始终保留
 P.log_fine = true;   % 默认保留子步数据，用于PWM频谱与指标分析
 P.predictor = 'euler'; % MPTC预测离散方式：'euler'或'trapezoid'（显式Heun）
+P.foc_gain_mode = 'estimated'; % 'estimated'按估计参数整定（默认）；'nominal'固定标称增益
 P.direct_Tref = [];  % 非空时旁路速度环：struct('t',阶跃时刻s,'from',,'to',) N*m
 end

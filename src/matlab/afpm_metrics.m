@@ -167,6 +167,12 @@ m.source_nyquist_Hz=NaN; m.source_sample_rate_Hz=NaN;
 m.source_max_resolvable_harmonic=NaN; m.electrical_frequency_Hz=NaN;
 m.speed_variation_pct=NaN; m.phase_speed_variation_pct=NaN;
 m.fundamental_peak_A=NaN; m.harmonic_peak_A=nan(1,40);
+m.harmonic_peak_full_A=nan(1,200);
+m.thd_full_harmonics=2:200; m.thd_full_pct=NaN; m.thd_full_reason='未计算';
+m.switching_band_pct=NaN; m.switching_band_Hz=[1000 2000];
+m.switching_band_definition='未计算';
+m.thd_full_definition=['2-200次（覆盖到开关频段）的谐波RMS/基波RMS；' ...
+    '与 thd_pct（2-40次，仅低次）并列报告，不互相替代'];
 m.wideband_reason='THD先决条件未满足';
 m.wideband_definition='原始采样带宽内、相位加权的去直流去基波残差RMS/基波RMS；不等于THD';
 m.spectrum_source='control'; d=o;
@@ -235,19 +241,40 @@ m.thd_used_cycles=5; m.thd_used_highest_harmonic=40;
 x=x-qa; L=x(end); dc=trapz(x,y)/L; y=y-dc;
 dx=diff(x); mid=(x(1:end-1)+x(2:end))/2;
 yavg=(y(1:end-1)+y(2:end))/2; slope=diff(y)./dx;
-coef=zeros(1,40);
-for h=1:40
+coef=zeros(1,200);
+for h=1:200
     z=h*dx/2; s=sin(z)./z; g=(z.*cos(z)-sin(z))./z.^2;
     small=abs(z)<1e-3; zz=z(small);
     g(small)=-zz/3+zz.^3/30-zz.^5/840;
     coef(h)=2/L*sum(exp(-1i*h*mid).*(yavg.*dx.*s+1i*slope.*dx.^2/2.*g));
 end
-m.harmonic_peak_A=abs(coef); m.fundamental_peak_A=abs(coef(1));
+m.harmonic_peak_A=abs(coef(1:40)); m.harmonic_peak_full_A=abs(coef);
+m.fundamental_peak_A=abs(coef(1));
 ac=sqrt(trapz(x,y.^2)/L);
 if m.fundamental_peak_A<max(1e-9,1e-6*ac)
     m.thd_reason='基波近零或相对交流RMS过弱'; return;
 end
 m.thd_pct=100*sqrt(sum(abs(coef(2:40)).^2))/abs(coef(1));
+% 全频段口径：只在采样带宽足以支撑200次时给出，否则保留NaN与原因。
+if isfinite(m.source_nyquist_Hz) && m.source_nyquist_Hz>200*max(f) && max(abs(dq))*200<pi
+    m.thd_full_pct=100*sqrt(sum(abs(coef(2:200)).^2))/abs(coef(1));
+    m.thd_full_reason='ok';
+else
+    m.thd_full_reason='原始采样带宽不足以辨识200次谐波';
+end
+% 开关频段指示：按实际电频率换算到时域频带，避免硬编码谐波次数。
+fh=(1:200)*m.electrical_frequency_Hz;
+band=fh>=m.switching_band_Hz(1) & fh<=m.switching_band_Hz(2);
+m.switching_band_pct=100*sqrt(sum(abs(coef(band)).^2))/abs(coef(1));
+h1=find(band,1,'first'); h2=find(band,1,'last');
+if isempty(h1)
+    m.switching_band_definition=sprintf('%g-%g Hz 频带内无可分辨谐波次数', ...
+        m.switching_band_Hz(1),m.switching_band_Hz(2));
+else
+    m.switching_band_definition=sprintf([ ...
+        '%g-%g Hz 频带内的谐波RMS/基波RMS；按电频率换算是%d-%d次；' ...
+        '仅为频段指示，不等于开关纹波'],m.switching_band_Hz(1),m.switching_band_Hz(2),h1,h2);
+end
 m.thd_valid=true; m.thd_reason='ok';
 residual=y-real(coef(1)*exp(1i*x));
 m.wideband_distortion_pct=100*sqrt(trapz(x,residual.^2)/L)/(abs(coef(1))/sqrt(2));

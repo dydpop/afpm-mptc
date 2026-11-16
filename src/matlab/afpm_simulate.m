@@ -78,7 +78,14 @@ if isfield(P,'w_ref_profile') && ~isempty(P.w_ref_profile)
     assert(size(pr,1)==2 && size(pr,2)>=2 && all(diff(pr(1,:))>0), ...
         'afpm:Profile','升速给定须为2xN且时刻严格递增');
 end
-Kpi=Pc.L*400; Kii=Pc.Rs*400; Vlim=P.Udc/sqrt(3);
+if isfield(P,'foc_gain_mode') && strcmp(P.foc_gain_mode,'nominal')
+    % 固定标称增益：把"整定随估计参数一起变"与"模型误差"两种效应分开。
+    % 前馈仍用估计参数，因此模型误差保留，只是增益不再跟着变。
+    Kpi=P.L*400; Kii=P.Rs*400;
+else
+    Kpi=Pc.L*400; Kii=Pc.Rs*400;
+end
+Vlim=P.Udc/sqrt(3);
 if ~is_mptc
     validateattributes(P.f_sw_foc,{'numeric'},{'scalar','real','finite','positive'});
     o.current_Kp=Kpi; o.current_Ki=Kii;

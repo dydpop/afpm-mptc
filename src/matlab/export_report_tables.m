@@ -42,5 +42,17 @@ writetable(abl,xls,'Sheet','ablations');
 writetable(step,xls,'Sheet','direct_step');
 writetable(ramp,xls,'Sheet','speed_ramp');
 writetable(acc,xls,'Sheet','acceptance');
-fprintf('已导出 %s（8 个工作表）\n',xls);
+if isfile(fullfile(out,'protocolB_metrics.csv'))
+    writetable(readtable(fullfile(out,'protocolB_metrics.csv'),'TextType','string'), ...
+        xls,'Sheet','protocolB');
+end
+if isfile(fullfile(out,'gainmode_metrics.csv'))
+    writetable(readtable(fullfile(out,'gainmode_metrics.csv'),'TextType','string'), ...
+        xls,'Sheet','gainmode');
+end
+if isfile(fullfile(out,'fieldweakening_metrics.csv'))
+    writetable(readtable(fullfile(out,'fieldweakening_metrics.csv'),'TextType','string'), ...
+        xls,'Sheet','field_weakening');
+end
+fprintf('已导出 %s\n',xls);
 end

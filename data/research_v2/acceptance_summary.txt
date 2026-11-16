@@ -1,5 +1,5 @@
-Core tests: 15/15
-Metric tests: 26/26
+Core tests: 16/16
+Metric tests: 27/27
 Simulink plant comparisons: 15/15
 Mismatch rows: 30 (26 unique configurations; nominal repeated per parameter)
 THD valid: 30/30; invalid entries retain reason and NaN.

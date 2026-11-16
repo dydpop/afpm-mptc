@@ -204,6 +204,54 @@ if any(strcmp(task,{'fw','all'}))
     end
     disp(D);
 end
+if any(strcmp(task,{'protocolB','all'}))
+    % 开题口径复核：控制周期100us + 载波10kHz（两者同步，每载波一次占空比更新）。
+    % 与主基准(50us/1.344kHz)并列报告，不替换主基准。
+    D = table(); CS = {{'',1.0};{'L',1.2};{'psi',0.8}};
+    for mode = {'mptc','foc'}
+        for i = 1:numel(CS)
+            Q = P; Q.Ts = 100e-6; Q.f_sw_foc = 10e3; Q.t_end = 2.0;
+            if isempty(CS{i}{1}), mm = struct(); else, mm = struct(CS{i}{1},CS{i}{2}); end
+            if isempty(CS{i}{1})
+                id = sprintf('protoB_%s_nominal',mode{1});
+            else
+                id = sprintf('protoB_%s_%s%03d',mode{1},CS{i}{1},round(100*CS{i}{2}));
+            end
+            fprintf('PROTOCOL_B %s\n',id);
+            o = afpm_simulate(mode{1},mm,Q); m = afpm_metrics(o,Q);
+            D = [D; table(string(id),string(mode{1}),string(CS{i}{1}),CS{i}{2}, ...
+                Q.Ts*1e6,Q.f_sw_foc,m.speed_mean_rpm,m.ripple_pp_Nm,m.thd_pct, ...
+                m.thd_full_pct,m.switching_band_pct,m.f_sw_Hz,m.steady_valid,m.ripple_valid, ...
+                'VariableNames',{'case_id','mode','param','factor','Ts_us','carrier_Hz', ...
+                'speed_rpm','ripple_Nm','thd_2_40_pct','thd_2_200_pct', ...
+                'switching_band_pct','f_sw_Hz','steady_valid','ripple_valid'})]; %#ok<AGROW>
+            save(fullfile(out,[id '.mat']),'P','Q','o','m','-v7');
+            writetable(D,fullfile(out,'protocolB_metrics.csv'));
+        end
+    end
+    disp(D);
+end
+if any(strcmp(task,{'gainmode','all'}))
+    % 固定标称增益 vs 按估计参数整定：分离"整定效应"与"模型误差"。
+    D = table(); CS = {'L',1.2;'psi',0.8;'Rs',1.2};
+    for i = 1:size(CS,1)
+        for gm = {'estimated','nominal'}
+            Q = P; Q.foc_gain_mode = gm{1}; mm = struct(CS{i,1},CS{i,2});
+            id = sprintf('foc_%s_%03d_%s',CS{i,1},round(100*CS{i,2}),gm{1});
+            fprintf('GAINMODE %s\n',id);
+            o = afpm_simulate('foc',mm,Q); m = afpm_metrics(o,Q);
+            D = [D; table(string(id),string(CS{i,1}),CS{i,2},string(gm{1}), ...
+                m.speed_mean_rpm,m.ripple_pp_Nm,m.thd_pct,m.thd_full_pct,m.f_sw_Hz, ...
+                m.load_recovery_ms,m.steady_valid, ...
+                'VariableNames',{'case_id','param','factor','gain_mode','speed_rpm', ...
+                'ripple_Nm','thd_2_40_pct','thd_2_200_pct','f_sw_Hz', ...
+                'load_recovery_ms','steady_valid'})]; %#ok<AGROW>
+            save(fullfile(out,[id '.mat']),'P','Q','o','m','-v7');
+            writetable(D,fullfile(out,'gainmode_metrics.csv'));
+        end
+    end
+    disp(D);
+end
 if any(strcmp(task,{'figures','all'}))
     A=readtable(fullfile(out,'sweep_metrics.csv'),'TextType','string');
     B=readtable(fullfile(out,'robustness_metrics.csv'),'TextType','string');
@@ -432,5 +480,20 @@ if isfile(fullfile(out,'ramp_metrics.csv')) && isfile(fullfile(out,'speed_ramp_m
     legend('MPTC','PWM FOC','Rated 11.9 N m','Location','southeast');
     title('Torque during ramp: headroom, not a tuning target');
     exportgraphics(f,fullfile(figdir,'speed_ramp.png'),'Resolution',300); close(f);
+end
+if isfile(fullfile(out,'baseline_mptc.mat')) && isfile(fullfile(out,'baseline_foc.mat'))
+    A=load(fullfile(out,'baseline_mptc.mat')); B=load(fullfile(out,'baseline_foc.mat'));
+    if isfield(A.m,'harmonic_peak_full_A')
+        f=figure('Visible','off','Color','w','Position',[80 80 1000 520]);
+        hh=1:200; f0=A.m.electrical_frequency_Hz;
+        stem(hh,A.m.harmonic_peak_full_A,'filled','Color',colors(1,:),'MarkerSize',3); hold on;
+        stem(hh,B.m.harmonic_peak_full_A,'filled','Color',colors(2,:),'MarkerSize',3);
+        xline(A.m.f_sw_Hz/f0,'k--'); set(gca,'YScale','log');
+        xlabel('Harmonic order (fundamental 20 Hz)'); ylabel('Phase current harmonic (A)');
+        grid on; legend('MPTC','PWM FOC','Device switching frequency','Location','northeast');
+        title(sprintf(['Low-order THD (2-40): %.2f%% vs %.2f%%  |  full band (2-200): %.2f%% vs %.2f%%'], ...
+            A.m.thd_pct,B.m.thd_pct,A.m.thd_full_pct,B.m.thd_full_pct));
+        exportgraphics(f,fullfile(figdir,'harmonic_spectrum.png'),'Resolution',300); close(f);
+    end
 end
 end
