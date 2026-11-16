@@ -23,5 +23,8 @@ P.delay_comp = true; % 仅控制MPTC预测补偿；物理一拍延时始终保�
 P.log_fine = true;   % 默认保留子步数据，用于PWM频谱与指标分析
 P.predictor = 'euler'; % MPTC预测离散方式：'euler'或'trapezoid'（显式Heun）
 P.foc_gain_mode = 'estimated'; % 'estimated'按估计参数整定（默认）；'nominal'固定标称增益
+P.cost_mode = 'weighted';  % MPTC代价函数：'weighted'加权求和（默认）或'lexicographic'分层筛选
+P.lex_torque_tol_pct = 10; % 分层第一层转矩容差，%T_rated
+P.lex_flux_tol_pct = 10;   % 分层第二层磁链容差，%ψf
 P.direct_Tref = [];  % 非空时旁路速度环：struct('t',阶跃时刻s,'from',,'to',) N*m
 end

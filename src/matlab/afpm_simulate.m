@@ -17,7 +17,15 @@ if ~isfield(P,'delay_comp'), P.delay_comp=true; end
 if ~isfield(P,'log_fine'), P.log_fine=true; end
 if ~isfield(P,'predictor'), P.predictor='euler'; end
 if ~isfield(P,'direct_Tref'), P.direct_Tref=[]; end
+if ~isfield(P,'foc_gain_mode'), P.foc_gain_mode='estimated'; end
+if ~isfield(P,'cost_mode'), P.cost_mode='weighted'; end
+if ~isfield(P,'lex_torque_tol_pct'), P.lex_torque_tol_pct=10; end
+if ~isfield(P,'lex_flux_tol_pct'), P.lex_flux_tol_pct=10; end
 P.predictor=validatestring(P.predictor,{'euler','trapezoid'});
+P.cost_mode=validatestring(P.cost_mode,{'weighted','lexicographic'});
+P.foc_gain_mode=validatestring(P.foc_gain_mode,{'estimated','nominal'});
+validateattributes(P.lex_torque_tol_pct,{'numeric'},{'scalar','real','finite','positive'});
+validateattributes(P.lex_flux_tol_pct,{'numeric'},{'scalar','real','finite','positive'});
 validateattributes(P.Ts,{'numeric'},{'scalar','real','finite','positive'});
 validateattributes(P.Nsub,{'numeric'},{'scalar','integer','positive'});
 validateattributes(P.t_end,{'numeric'},{'scalar','real','finite','positive'});
@@ -124,9 +132,21 @@ for k=1:N
         pa=Pc.L*xa2+Pc.psi*cos(theta2); pb=Pc.L*xb2+Pc.psi*sin(theta2);
         Tp=1.5*Pc.p*Pc.psi*(-xa2*sin(theta2)+xb2*cos(theta2));
         flips=sum(S~=S(pending_vec,:),2);
-        cost=abs(Tref-Tp)/P.T_rated ...
-            +P.lam_flux*abs(hypot(pa,pb)-Pc.psi)/Pc.psi+P.lam_sw*flips;
-        [~,command_vec]=min(cost);
+        if strcmp(P.cost_mode,'lexicographic')
+            % 分层筛选（容差序贯）：先转矩带、再磁链带、最后取切换最少者；
+            % 某一层筛空则退回上一层，避免无解。
+            eT=abs(Tref-Tp); eF=abs(hypot(pa,pb)-Pc.psi);
+            sel=find(eT<=P.lex_torque_tol_pct/100*P.T_rated);
+            if isempty(sel), [~,sel]=min(eT); end
+            s2=sel(eF(sel)<=P.lex_flux_tol_pct/100*Pc.psi);
+            if ~isempty(s2), sel=s2; end
+            [~,ord]=sortrows([flips(sel),eT(sel)]);
+            command_vec=sel(ord(1));
+        else
+            cost=abs(Tref-Tp)/P.T_rated ...
+                +P.lam_flux*abs(hypot(pa,pb)-Pc.psi)/Pc.psi+P.lam_sw*flips;
+            [~,command_vec]=min(cost);
+        end
         command_voltage=V(command_vec,:)';
         o.command_vec(k)=command_vec;
     else

@@ -54,5 +54,11 @@ if isfile(fullfile(out,'fieldweakening_metrics.csv'))
     writetable(readtable(fullfile(out,'fieldweakening_metrics.csv'),'TextType','string'), ...
         xls,'Sheet','field_weakening');
 end
+for nm = {'costmode_metrics','costmode';'refine_metrics','refine';'ramp_metrics','speed_ramp'}
+    f = fullfile(out,[nm{1} '.csv']);
+    if isfile(f)
+        writetable(readtable(f,'TextType','string'),xls,'Sheet',nm{2});
+    end
+end
 fprintf('已导出 %s\n',xls);
 end

@@ -1,2 +1,2 @@
-Rs,L,psi,p,J,F,Udc,Ts,Nsub,w_ref,T_load,t_step,t_end,T_rated,lam_flux,lam_sw,Kp_w,Ki_w,f_sw_foc,delay_comp,log_fine,predictor,foc_gain_mode,direct_Tref,metric_window_s,source_fingerprint,run_id
-0.2,0.0085,0.175,4,0.003,0.008,250,5e-05,20,300,8,0.3,2,11.9,1,0.02,2,8,1344.16666666667,1,1,euler,estimated,,0.4,204ed913ce3d00e9017aea96005dcb237243d126aa06ffce66f5095ee8b6965b,run_20261116_164214
+Rs,L,psi,p,J,F,Udc,Ts,Nsub,w_ref,T_load,t_step,t_end,T_rated,lam_flux,lam_sw,Kp_w,Ki_w,f_sw_foc,delay_comp,log_fine,predictor,foc_gain_mode,cost_mode,lex_torque_tol_pct,lex_flux_tol_pct,direct_Tref,metric_window_s,source_fingerprint,run_id
+0.2,0.0085,0.175,4,0.003,0.008,250,5e-05,20,300,8,0.3,2,11.9,1,0.02,2,8,1344.16666666667,1,1,euler,estimated,weighted,10,10,,0.4,f884ea36b6695f981e4890a604485078c5f3dd00a32021080b0c52ec08e29eb0,run_20261116_184540

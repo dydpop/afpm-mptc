@@ -204,6 +204,73 @@ if any(strcmp(task,{'fw','all'}))
     end
     disp(D);
 end
+if any(strcmp(task,{'costmode','all'}))
+    % 代价函数取舍对比：加权求和 vs 容差序贯分层（开题5.2要求）。
+    D = table(); CS = {{'',1.0};{'L',1.2};{'psi',0.8}};
+    for cm = {'weighted','lexicographic'}
+        for i = 1:numel(CS)
+            Q = P; Q.cost_mode = cm{1};
+            if isempty(CS{i}{1}), mm = struct(); else, mm = struct(CS{i}{1},CS{i}{2}); end
+            if isempty(CS{i}{1})
+                id = sprintf('cost_%s_nominal',cm{1});
+            else
+                id = sprintf('cost_%s_%s%03d',cm{1},CS{i}{1},round(100*CS{i}{2}));
+            end
+            fprintf('COSTMODE %s\n',id);
+            o = afpm_simulate('mptc',mm,Q); m = afpm_metrics(o,Q);
+            D = [D; table(string(id),string(cm{1}),string(CS{i}{1}),CS{i}{2}, ...
+                m.speed_mean_rpm,m.ripple_pp_Nm,m.thd_pct,m.thd_full_pct,m.f_sw_Hz, ...
+                m.load_recovery_ms,m.steady_valid, ...
+                'VariableNames',{'case_id','cost_mode','param','factor','speed_rpm', ...
+                'ripple_Nm','thd_2_40_pct','thd_2_200_pct','f_sw_Hz', ...
+                'load_recovery_ms','steady_valid'})]; %#ok<AGROW>
+            save(fullfile(out,[id '.mat']),'P','Q','o','m','-v7');
+            writetable(D,fullfile(out,'costmode_metrics.csv'));
+        end
+    end
+    % 容差带宽扫描：分层代价的表现强烈依赖带宽，必须给出带宽敏感性，
+    % 否则等于用一个未整定的设置当作方法结论。
+    for tol = [2 5 10]
+        Q = P; Q.cost_mode = 'lexicographic';
+        Q.lex_torque_tol_pct = tol; Q.lex_flux_tol_pct = tol;
+        id = sprintf('cost_lexTol%02d_nominal',tol);
+        fprintf('COSTMODE %s\n',id);
+        o = afpm_simulate('mptc',struct(),Q); m = afpm_metrics(o,Q);
+        D = [D; table(string(id),string('lexicographic'),string('tol_pct'),tol, ...
+            m.speed_mean_rpm,m.ripple_pp_Nm,m.thd_pct,m.thd_full_pct,m.f_sw_Hz, ...
+            m.load_recovery_ms,m.steady_valid, ...
+            'VariableNames',{'case_id','cost_mode','param','factor','speed_rpm', ...
+            'ripple_Nm','thd_2_40_pct','thd_2_200_pct','f_sw_Hz', ...
+            'load_recovery_ms','steady_valid'})]; %#ok<AGROW>
+        save(fullfile(out,[id '.mat']),'P','Q','o','m','-v7');
+        writetable(D,fullfile(out,'costmode_metrics.csv'));
+    end
+    disp(D);
+end
+if any(strcmp(task,{'refine','all'}))
+    % 拐点加密：在 ±10%~±20% 之间补点，检查是否存在非线性拐点（开题任务四要求）。
+    D = table(); CS = {'L',1.05;'L',1.15;'psi',1.05;'psi',1.15};
+    for mode = {'mptc','foc'}
+        for i = 1:size(CS,1)
+            Q = P; mm = struct(CS{i,1},CS{i,2});
+            id = sprintf('refine_%s_%s%03d',mode{1},CS{i,1},round(100*CS{i,2}));
+            fprintf('REFINE %s\n',id);
+            o = afpm_simulate(mode{1},mm,Q); m = afpm_metrics(o,Q);
+            if isfield(Q,'metric_window_s'), mw = Q.metric_window_s; else, mw = 0.4; end
+            qd = o.t>=Q.t_end-mw;
+            idpk = max(abs(o.id(qd)));
+            D = [D; table(string(id),string(mode{1}),string(CS{i,1}),CS{i,2}, ...
+                m.speed_mean_rpm,m.ripple_pp_Nm,m.thd_pct,m.thd_full_pct,m.f_sw_Hz, ...
+                idpk,m.steady_valid, ...
+                'VariableNames',{'case_id','mode','param','factor','speed_rpm', ...
+                'ripple_Nm','thd_2_40_pct','thd_2_200_pct','f_sw_Hz', ...
+                'id_peak_A','steady_valid'})]; %#ok<AGROW>
+            save(fullfile(out,[id '.mat']),'P','Q','o','m','-v7');
+            writetable(D,fullfile(out,'refine_metrics.csv'));
+        end
+    end
+    disp(D);
+end
 if any(strcmp(task,{'protocolB','all'}))
     % 开题口径复核：控制周期100us + 载波10kHz（两者同步，每载波一次占空比更新）。
     % 与主基准(50us/1.344kHz)并列报告，不替换主基准。

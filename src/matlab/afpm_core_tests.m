@@ -5,7 +5,7 @@ cases = {@test_defaults, @test_zero, @test_vectors_power, ...
     @test_mismatch, @test_current_limit, @test_loaded, ...
     @test_pwm_events, @test_pwm_convergence, ...
     @test_direct_torque_step, @test_predictor_switch, @test_ramp_profile, ...
-    @test_gain_mode};
+    @test_gain_mode, @test_cost_mode};
 names = {'默认参数与研究假设', '零电流初值及零负载', ...
     '电压矢量及电磁功率符号', '一拍物理延时与补偿开关', ...
     '统一转矩PI及条件积分', '真实PWM整数翻转计数', ...
@@ -13,7 +13,7 @@ names = {'默认参数与研究假设', '零电流初值及零负载', ...
     'FOC电压矢量限幅', '负载下两方案转速跟踪', ...
     '精确PWM窄脉冲全计数与冻结队列', 'FOC分段RK4步长收敛', ...
     '直接转矩阶跃旁路速度环', '预测离散方式切换', ...
-    '升速给定插值与端点保持', '固定增益与估计增益可切换'};
+    '升速给定插值与端点保持', '固定增益与估计增益可切换', '分层代价与加权代价可切换'};
 tests = repmat(struct('name','','pass',false,'detail',''),numel(cases),1);
 for k = 1:numel(cases)
     tests(k).name = names{k};
@@ -340,4 +340,23 @@ assert(abs(o2.current_Kp-P.L*400)<1e-9,'固定模式应按标称L整定');
 assert(abs(o1.current_Kp-o2.current_Kp)>1e-6,'两种模式增益应不同');
 assert(all(isfinite(o1.Te)) && all(isfinite(o2.Te)));
 d=sprintf('Kp估计%.1f vs 固定%.1f；默认estimated',o1.current_Kp,o2.current_Kp);
+end
+
+function d = test_cost_mode()
+% 分层代价：默认仍为加权；两模式都可运行；先转矩带、再磁链带、后取最少切换。
+P=afpm_defaults();
+assert(strcmp(P.cost_mode,'weighted'),'默认应为加权求和');
+P.t_end=.05; P.T_load=0; mm=struct('L',1.2);
+ow=afpm_simulate('mptc',mm,P);
+Q=P; Q.cost_mode='lexicographic';
+ol=afpm_simulate('mptc',mm,Q);
+assert(all(isfinite(ow.Te)) && all(isfinite(ol.Te)));
+assert(all(ol.command_vec>=1 & ol.command_vec<=8),'分层模式必须给出合法矢量下标');
+assert(any(ow.command_vec~=ol.command_vec),'两模式应有不同的矢量决策序列');
+% 容差收紧到极小值时，第一层必然筛空，必须退回最小转矩误差而不报错。
+R=P; R.cost_mode='lexicographic'; R.lex_torque_tol_pct=1e-6; R.lex_flux_tol_pct=1e-6;
+ot=afpm_simulate('mptc',mm,R);
+assert(all(isfinite(ot.Te)) && all(ot.command_vec>=1 & ot.command_vec<=8));
+d=sprintf('默认weighted；加权首拍矢量=%d，分层首拍=%d；紧容差仍可运行', ...
+    ow.command_vec(1),ol.command_vec(1));
 end

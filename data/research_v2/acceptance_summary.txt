@@ -1,4 +1,4 @@
-Core tests: 16/16
+Core tests: 17/17
 Metric tests: 27/27
 Simulink plant comparisons: 15/15
 Mismatch rows: 30 (26 unique configurations; nominal repeated per parameter)
