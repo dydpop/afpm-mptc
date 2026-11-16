@@ -22,3 +22,6 @@ desktop.ini
 
 # Simulink/建模临时目录
 src/model/_dbg/
+
+# 文档排版中间产物
+docs/build/
