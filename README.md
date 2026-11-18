@@ -6,6 +6,9 @@
 
 | 想看的 | 点这里 |
 |---|---|
+| 中期检查 PPT（8 页） | [docs/中期汇报_第5组.pptx](docs/中期汇报_第5组.pptx) |
+| 中期检查讲稿（Word） | [docs/中期汇报_讲稿_第5组.docx](docs/中期汇报_讲稿_第5组.docx) |
+| 中期素材与边界说明 | [docs/midterm/素材与边界.md](docs/midterm/素材与边界.md) |
 | 结题报告（在线可读） | [docs/结题报告_初稿.md](docs/结题报告_初稿.md) |
 | 结题报告（Word 下载） | [docs/结题报告_第5组.docx](docs/结题报告_第5组.docx) |
 | 答辩 PPT | [docs/结题答辩_第5组.pptx](docs/结题答辩_第5组.pptx) |
