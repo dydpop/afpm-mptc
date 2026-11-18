@@ -2,6 +2,21 @@
 
 哈尔滨工业大学（威海）《赛车电机与电控系统》项目驱动课程 · Team 5
 
+## 快速导航
+
+| 想看的 | 点这里 |
+|---|---|
+| 结题报告（在线可读） | [docs/结题报告_初稿.md](docs/结题报告_初稿.md) |
+| 结题报告（Word 下载） | [docs/结题报告_第5组.docx](docs/结题报告_第5组.docx) |
+| 答辩 PPT | [docs/结题答辩_第5组.pptx](docs/结题答辩_第5组.pptx) |
+| 答辩讲稿（5 分钟） | [docs/结题答辩_讲稿.md](docs/结题答辩_讲稿.md) |
+| 结论与证据边界 | [docs/研究验证记录.md](docs/研究验证记录.md) |
+| 全部图 | [figures/research_v2](figures/research_v2) |
+| 全部数据表 | [data/research_v2](data/research_v2) |
+| 复现方法 | [src/INTERFACE.md](src/INTERFACE.md) |
+
+> 仓库已公开，供课程组内与老师查阅。文中结论限于文献小功率样机的纯仿真结果，不外推到实车。
+
 ## 当前执行入口
 
 - **完成情况与证据链接**：[docs/进度.md](docs/进度.md)。保留原模块归属，但本轮由辅助开发统一推进，不冒称任何成员亲自完成。
